@@ -23,3 +23,10 @@ class FolderAccess(models.Model):
 
     def __str__(self):
         return f"{self.user.username} → {self.folder_path}"
+    
+class FileAccess(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    file_path = models.CharField(max_length=500)
+    can_view = models.BooleanField(default=False)
+    can_edit = models.BooleanField(default=False)
+    can_delete = models.BooleanField(default=False)

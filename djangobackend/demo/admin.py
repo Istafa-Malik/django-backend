@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import User, FolderAccess
+from .models import User, FolderAccess, FileAccess
 
 class CustomUserAdmin(UserAdmin):
     model = User
@@ -22,3 +22,9 @@ class FolderAccessAdmin(admin.ModelAdmin):
     list_display = ('user', 'folder_path', 'can_view', 'can_edit', 'can_delete')
     list_filter = ('can_view', 'can_edit', 'can_delete')
     search_fields = ('user__username', 'folder_path')
+
+@admin.register(FileAccess)
+class FileAccessAdmin(admin.ModelAdmin):
+    list_display = ('user', 'file_path', 'can_view', 'can_edit', 'can_delete')
+    list_filter = ('can_view', 'can_edit', 'can_delete')
+    search_fields = ('user__username', 'file_path')

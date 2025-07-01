@@ -2,7 +2,7 @@ import os
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
-from .models import FolderAccess
+from .models import FolderAccess, FileAccess
 from django.contrib.auth import login
 from .serializers import LoginSerializer
 from rest_framework.permissions import IsAuthenticated
@@ -58,28 +58,21 @@ def list_folders(request):
 @permission_classes([IsAuthenticated])
 def list_files(request):
     user = request.user
-    rel_folder_path = request.data.get("folder_path")
+    rel_file_path = request.data.get("file_path", "").strip()
+    abs_file_path = os.path.join(settings.BASE_DIR, rel_file_path)
+    if not os.path.isfile(abs_file_path):
+        return Response({"error": f"{rel_file_path} is not a valid file."})
     try:
-        access = FolderAccess.objects.get(user=user, folder_path=rel_folder_path, can_view=True)
-    except FolderAccess.DoesNotExist:
-        return Response({"error": "You do not have permission to view this folder."})
-    
-    try:
-        abs_folder_path = os.path.join(settings.BASE_DIR, rel_folder_path)
-        all_files = os.listdir(abs_folder_path)
-        visible_files = [
-            f for f in all_files
-            if os.path.isfile(os.path.join(abs_folder_path, f)) and not f.startswith('.')
-        ]
-    except Exception as e:
-        return Response({"error": f"Unable to read folder: {str(e)}"})
+        access = FileAccess.objects.get(user=user, file_path=rel_file_path, can_view=True)
+        print('access is: ', access)
+    except FileAccess.DoesNotExist:
+        return Response({"error": "You do not have permission to view this file."})
     
     return Response({
-        "folder_path": rel_folder_path,
+        "file_path": rel_file_path,
         'can_view': access.can_view,
         "can_edit": access.can_edit,
         "can_delete": access.can_delete,
-        "files": visible_files
+        "file_url": f"/{rel_file_path}"
     })
 
-    

@@ -30,3 +30,7 @@ class FileAccess(models.Model):
     can_view = models.BooleanField(default=False)
     can_edit = models.BooleanField(default=False)
     can_delete = models.BooleanField(default=False)
+    def save(self, *args, **kwargs):
+        if self.file_path.startswith("djangobackend/"):
+            self.file_path = self.file_path.replace("djangobackend/", "", 1)
+        super().save(*args, **kwargs)

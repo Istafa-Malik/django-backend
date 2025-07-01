@@ -73,6 +73,5 @@ def list_files(request):
         'can_view': access.can_view,
         "can_edit": access.can_edit,
         "can_delete": access.can_delete,
-        "file_url": f"/{rel_file_path}"
     })
 

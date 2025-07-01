@@ -7,7 +7,6 @@ from django.contrib.auth import login
 from .serializers import LoginSerializer
 from rest_framework.permissions import IsAuthenticated
 from django.views.decorators.csrf import csrf_exempt
-from django.conf import settings
 from .middleware import get_folders, get_file_access
 
 @csrf_exempt

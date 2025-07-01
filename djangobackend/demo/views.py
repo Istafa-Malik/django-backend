@@ -7,7 +7,7 @@ from django.contrib.auth import login
 from .serializers import LoginSerializer
 from rest_framework.permissions import IsAuthenticated
 from django.views.decorators.csrf import csrf_exempt
-
+from django.conf import settings
 
 @csrf_exempt
 @api_view(['POST'])
@@ -30,23 +30,21 @@ def list_folders(request):
     access_entries = FolderAccess.objects.filter(user=user, can_view=True)
     
     if not access_entries.exists():
-        return Response(
-            {"error": "You do not have access to any folders."},
-            status=403
-        )
+        return Response({"error": "You do not have access to any folders."})
     for entry in access_entries:
-        folder_path = entry.folder_path
+        rel_folder_path = entry.folder_path
+        abs_folder_path = os.path.join(settings.BASE_DIR, rel_folder_path)
         try:
-            all_items = os.listdir(folder_path)
+            all_items = os.listdir(abs_folder_path)
             subfolders = [
                 f for f in all_items
-                if os.path.isdir(os.path.join(folder_path, f)) and not f.startswith('.')
+                if os.path.isdir(os.path.join(abs_folder_path, f)) and not f.startswith('.')
             ]
         except Exception as e:
             subfolders = []
 
         folders.append({
-            "folder_path": folder_path,
+            "folder_path": rel_folder_path,
             "can_view": entry.can_view,
             "can_edit": entry.can_edit,
             "can_delete": entry.can_delete,
@@ -60,24 +58,24 @@ def list_folders(request):
 @permission_classes([IsAuthenticated])
 def list_files(request):
     user = request.user
-    folder_path = request.data.get("folder_path")
-    print('folder path is: ', folder_path)
+    rel_folder_path = request.data.get("folder_path")
     try:
-        access = FolderAccess.objects.get(user=user, folder_path=folder_path, can_view=True)
+        access = FolderAccess.objects.get(user=user, folder_path=rel_folder_path, can_view=True)
     except FolderAccess.DoesNotExist:
         return Response({"error": "You do not have permission to view this folder."})
-
+    
     try:
-        all_files = os.listdir(folder_path)
+        abs_folder_path = os.path.join(settings.BASE_DIR, rel_folder_path)
+        all_files = os.listdir(abs_folder_path)
         visible_files = [
             f for f in all_files
-            if os.path.isfile(os.path.join(folder_path, f)) and not f.startswith('.')
+            if os.path.isfile(os.path.join(abs_folder_path, f)) and not f.startswith('.')
         ]
     except Exception as e:
         return Response({"error": f"Unable to read folder: {str(e)}"})
-
+    
     return Response({
-        "folder_path": folder_path,
+        "folder_path": rel_folder_path,
         'can_view': access.can_view,
         "can_edit": access.can_edit,
         "can_delete": access.can_delete,

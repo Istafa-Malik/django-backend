@@ -6,16 +6,23 @@ from .models import FolderAccess, FileAccess
 from django.contrib.auth import login
 from .serializers import LoginSerializer
 from rest_framework.permissions import IsAuthenticated
-from django.views.decorators.csrf import csrf_exempt
-from .middleware import get_folders, get_file_access
+from django.views.decorators.csrf import ensure_csrf_cookie
+from .middleware import get_folders, get_file_access, list_folder_files
+from django.middleware.csrf import get_token
+from django.http import JsonResponse
 
-@csrf_exempt
+
+@ensure_csrf_cookie
+def get_csrf_token(request):
+    return JsonResponse({'message': 'CSRF cookie set'})
+
 @api_view(['POST'])
 def login_view(request):
     serializer = LoginSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.validated_data['user']
         login(request, user)
+        get_token(request)
         return Response({"message": "Login successful"})
     return Response(serializer.errors)
     
@@ -28,6 +35,13 @@ def list_folders(request):
     
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def list_files(request):
+def file_access(request):
     return get_file_access(request)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def list_files(request):
+    return list_folder_files(request)
+
 

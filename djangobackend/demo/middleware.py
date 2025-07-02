@@ -6,8 +6,8 @@ from django.conf import settings
 
 def get_folders(request):
     user = request.user
+    print('user is: ', user)
     folders = []
-
     access_entries = FolderAccess.objects.filter(user=user, can_view=True)
     
     if not access_entries.exists():
@@ -57,3 +57,18 @@ def get_file_access(request):
         "can_delete": access.can_delete,
         "file_url": f"/{rel_file_path}"
     })
+
+
+def list_folder_files(request):
+    folder_path = request.data.get("folder_path", "").strip()
+    abs_folder_path = os.path.join(settings.BASE_DIR, folder_path)
+
+    if not os.path.isdir(abs_folder_path):
+        return Response({"error": "Invalid folder path."}, status=400)
+
+    files = [
+        f for f in os.listdir(abs_folder_path)
+        if os.path.isfile(os.path.join(abs_folder_path, f))
+    ]
+
+    return Response({"files": files})

@@ -7,7 +7,7 @@ from django.contrib.auth import login
 from .serializers import LoginSerializer
 from rest_framework.permissions import IsAuthenticated
 from django.views.decorators.csrf import ensure_csrf_cookie
-from .middleware import get_folders, get_file_access, list_folder_files
+from .middleware import get_folders, get_file_access, list_folder_files, get_file_or_folder_info
 from django.middleware.csrf import get_token
 from django.http import JsonResponse
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -23,7 +23,6 @@ def login_view(request):
     if serializer.is_valid():
         user = serializer.validated_data['user']
         refresh = RefreshToken.for_user(user)
-        
         return Response({
             "message": "Login successful",
             "access": str(refresh.access_token),
@@ -47,6 +46,6 @@ def file_access(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def list_files(request):
-    return list_folder_files(request)
+    return get_file_or_folder_info(request)
 
 

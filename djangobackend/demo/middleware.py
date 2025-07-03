@@ -6,7 +6,6 @@ from django.conf import settings
 
 def get_folders(request):
     user = request.user
-    print('user is: ', user)
     folders = []
     access_entries = FolderAccess.objects.filter(user=user, can_view=True)
     
@@ -60,15 +59,65 @@ def get_file_access(request):
 
 
 def list_folder_files(request):
-    folder_path = request.data.get("folder_path", "").strip()
-    abs_folder_path = os.path.join(settings.BASE_DIR, folder_path)
+    print('inside list folder')
+    file_path = request.data.get("file_path", "").strip()
+    print('folder path is',file_path)
+    abs_file_path = os.path.join(settings.BASE_DIR, file_path)
+    print(abs_file_path)
 
-    if not os.path.isdir(abs_folder_path):
-        return Response({"error": "Invalid folder path."}, status=400)
+    if not os.path.isdir(abs_file_path):
+        return Response({"error": "Invalid folder path."})
 
     files = [
+        f for f in os.listdir(abs_file_path)
+        if os.path.isfile(os.path.join(abs_file_path, f))
+    ]
+    print('files are: ', files)
+
+    return Response({"files": files,})
+
+
+
+
+
+def get_file_or_folder_info(request):
+    user = request.user
+    rel_folder_path = request.data.get("folder_path", "").strip()
+
+    if not rel_folder_path:
+        return Response({"error": "Folder path not provided."})
+
+    abs_folder_path = os.path.join(settings.BASE_DIR, rel_folder_path)
+    if not os.path.isdir(abs_folder_path):
+        return Response({"error": "Invalid folder path."})
+
+    all_files = [
         f for f in os.listdir(abs_folder_path)
         if os.path.isfile(os.path.join(abs_folder_path, f))
     ]
 
-    return Response({"files": files})
+    file_paths = [os.path.join(rel_folder_path, f) for f in all_files]
+    print('file paths: ', file_paths)
+    access_records = FileAccess.objects.filter(user=user, file_path__in=file_paths)
+    
+    access_map = {record.file_path: record for record in access_records}
+    print('access map: ',access_map)
+    accessible_files = []
+    for file_name in all_files:
+        rel_file_path = os.path.join(rel_folder_path, file_name)
+        access = access_map.get(rel_file_path)
+
+        if access and access.can_view:
+            file_url = f"{settings.MEDIA_URL}{rel_file_path}"
+            accessible_files.append({
+                "file_name": file_name,
+                "can_view": access.can_view,
+                "can_edit": access.can_edit,
+                "can_delete": access.can_delete,
+                "file_url": file_url
+            })
+
+    return Response({
+        "folder_path": rel_folder_path,
+        "files": accessible_files
+    })

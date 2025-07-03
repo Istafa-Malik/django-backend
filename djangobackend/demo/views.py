@@ -10,6 +10,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from .middleware import get_folders, get_file_access, list_folder_files
 from django.middleware.csrf import get_token
 from django.http import JsonResponse
+from rest_framework_simplejwt.tokens import RefreshToken
 
 
 @ensure_csrf_cookie
@@ -21,9 +22,13 @@ def login_view(request):
     serializer = LoginSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.validated_data['user']
-        login(request, user)
-        get_token(request)
-        return Response({"message": "Login successful"})
+        refresh = RefreshToken.for_user(user)
+        
+        return Response({
+            "message": "Login successful",
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            })
     return Response(serializer.errors)
     
 

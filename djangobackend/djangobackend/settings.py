@@ -45,8 +45,9 @@ INSTALLED_APPS = [
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
+        # 'rest_framework.authentication.SessionAuthentication',
         # 'rest_framework.authentication.BasicAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication'
     ],
 }
 CSRF_TRUSTED_ORIGINS = [
@@ -56,9 +57,9 @@ CSRF_TRUSTED_ORIGINS = [
 # SESSION_COOKIE_SAMESITE = 'Lax'
 # SESSION_COOKIE_SECURE = False
 
-CSRF_COOKIE_SAMESITE = 'Lax'
-CSRF_COOKIE_SECURE = False 
-CSRF_COOKIE_HTTPONLY = False
+# CSRF_COOKIE_SAMESITE = 'Lax'
+# CSRF_COOKIE_SECURE = False 
+# CSRF_COOKIE_HTTPONLY = False
 # CSRF_COOKIE_SAMESITE = 'None'
 # CSRF_COOKIE_SECURE = True 
 

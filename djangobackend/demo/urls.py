@@ -1,9 +1,9 @@
 from django.urls import path
 from .views import login_view, list_files, list_folders, get_csrf_token
-# from rest_framework_simplejwt.views import (
-#     TokenObtainPairView,
-#     TokenRefreshView,
-# )
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
 
 
 urlpatterns = [
@@ -13,4 +13,5 @@ urlpatterns = [
     path('dashboard/', list_folders, name='folders'),
     path('dashboard/files', list_files, name='files'),
     path('csrf/', get_csrf_token, name='get_csrf'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh')
 ]

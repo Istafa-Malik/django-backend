@@ -7,7 +7,7 @@ from django.contrib.auth import login
 from .serializers import LoginSerializer
 from rest_framework.permissions import IsAuthenticated
 from django.views.decorators.csrf import ensure_csrf_cookie
-from .middleware import get_folders, get_file_access, list_folder_files, get_file_or_folder_info
+from .middleware import get_folders, get_files
 from django.middleware.csrf import get_token
 from django.http import JsonResponse
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -37,15 +37,15 @@ def list_folders(request):
    return get_folders(request)
 
     
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def file_access(request):
-    return get_file_access(request)
+# @api_view(['POST'])
+# @permission_classes([IsAuthenticated])
+# def file_access(request):
+#     return get_file_access(request)
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def list_files(request):
-    return get_file_or_folder_info(request)
+    return get_files(request)
 
 

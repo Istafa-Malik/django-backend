@@ -2,7 +2,7 @@ import os
 from rest_framework.response import Response
 from .models import FolderAccess, FileAccess
 from django.conf import settings
-
+from django.urls import reverse
 
 def get_folders(request):
     user = request.user
@@ -10,7 +10,7 @@ def get_folders(request):
     access_entries = FolderAccess.objects.filter(user=user, can_view=True)
     
     if not access_entries.exists():
-        return Response({"error": "You do not have access to any folders."}, status=403)
+        return Response({"error": "You do not have access to any folders."})
     
     for entry in access_entries:
         rel_folder_path = entry.folder_path
@@ -35,52 +35,34 @@ def get_folders(request):
 
     return Response({"folders": folders})
 
-
-def get_file_access(request):
-    user = request.user
-    rel_file_path = request.data.get("file_path", "").strip()
-    abs_file_path = os.path.join(settings.BASE_DIR, rel_file_path)
-
-    if not os.path.isfile(abs_file_path):
-        return Response({"error": f"{rel_file_path} is not a valid file."}, status=400)
-
-    try:
-        access = FileAccess.objects.get(user=user, file_path=rel_file_path, can_view=True)
-    except FileAccess.DoesNotExist:
-        return Response({"error": "You do not have permission to view this file."}, status=403)
-
-    return Response({
-        "file_path": rel_file_path,
-        "can_view": access.can_view,
-        "can_edit": access.can_edit,
-        "can_delete": access.can_delete,
-        "file_url": f"/{rel_file_path}"
-    })
+                                            #Following function can be used as a specific access/permission function for a better code structure
+                                            #for now I have commented it.
 
 
-def list_folder_files(request):
-    print('inside list folder')
-    file_path = request.data.get("file_path", "").strip()
-    print('folder path is',file_path)
-    abs_file_path = os.path.join(settings.BASE_DIR, file_path)
-    print(abs_file_path)
+# def get_file_access(request):
+#     user = request.user
+#     rel_file_path = request.data.get("file_path", "").strip()
+#     abs_file_path = os.path.join(settings.BASE_DIR, rel_file_path)
 
-    if not os.path.isdir(abs_file_path):
-        return Response({"error": "Invalid folder path."})
+#     if not os.path.isfile(abs_file_path):
+#         return Response({"error": f"{rel_file_path} is not a valid file."}, status=400)
 
-    files = [
-        f for f in os.listdir(abs_file_path)
-        if os.path.isfile(os.path.join(abs_file_path, f))
-    ]
-    print('files are: ', files)
+#     try:
+#         access = FileAccess.objects.get(user=user, file_path=rel_file_path, can_view=True)
+#     except FileAccess.DoesNotExist:
+#         return Response({"error": "You do not have permission to view this file."}, status=403)
 
-    return Response({"files": files,})
+#     return Response({
+#         "file_path": rel_file_path,
+#         "can_view": access.can_view,
+#         "can_edit": access.can_edit,
+#         "can_delete": access.can_delete,
+#         "file_url": f"/{rel_file_path}"
+#     })
 
 
 
-
-
-def get_file_or_folder_info(request):
+def get_files(request):
     user = request.user
     rel_folder_path = request.data.get("folder_path", "").strip()
 
@@ -109,12 +91,14 @@ def get_file_or_folder_info(request):
 
         if access and access.can_view:
             file_url = f"{settings.MEDIA_URL}{rel_file_path}"
+            download_url = request.build_absolute_uri(f"/media/{rel_file_path}")
             accessible_files.append({
                 "file_name": file_name,
                 "can_view": access.can_view,
                 "can_edit": access.can_edit,
                 "can_delete": access.can_delete,
-                "file_url": file_url
+                "file_url": file_url,
+                "download_url": download_url
             })
 
     return Response({

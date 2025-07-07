@@ -1,21 +1,11 @@
 import os
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework import status
-from .models import FolderAccess, FileAccess
-from django.contrib.auth import login
 from .serializers import LoginSerializer
 from rest_framework.permissions import IsAuthenticated
-from django.views.decorators.csrf import ensure_csrf_cookie
-from .middleware import get_folders, get_files
-from django.middleware.csrf import get_token
-from django.http import JsonResponse
+from .middleware import get_folders, get_files, download, rename
 from rest_framework_simplejwt.tokens import RefreshToken
 
-
-@ensure_csrf_cookie
-def get_csrf_token(request):
-    return JsonResponse({'message': 'CSRF cookie set'})
 
 @api_view(['POST'])
 def login_view(request):
@@ -48,4 +38,12 @@ def list_folders(request):
 def list_files(request):
     return get_files(request)
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def download_folder(request):
+    return download(request)
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def edit(request):
+    return rename(request)

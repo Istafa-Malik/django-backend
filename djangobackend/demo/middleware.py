@@ -5,7 +5,7 @@ from django.conf import settings
 from django.http import FileResponse, HttpResponseBadRequest, Http404
 import zipfile
 import io
-
+import shutil
 
 def get_folders(request):
     user = request.user
@@ -138,21 +138,175 @@ def rename(request):
     new_name = request.data.get('new_name')
 
     if not old_path or not new_name:
-        return Response({'error': 'Missing old_path or new_name'})
+        return Response({"error": "Missing old_path or new_name"})
 
-    abs_old_path = os.path.join(settings.BASE_DIR, old_path)
+    # Strip '/media/' only if present in the path
+    if old_path.startswith('/media/'):
+        relative_path = old_path[len('/media/'):]  # remove '/media/'
+    else:
+        relative_path = old_path  # assume already relative
+
+    abs_old_path = os.path.join(settings.MEDIA_ROOT, relative_path)
     dir_name = os.path.dirname(abs_old_path)
     abs_new_path = os.path.join(dir_name, new_name)
 
-    new_rel_path = os.path.join(os.path.dirname(old_path), new_name)
+    if not os.path.exists(abs_old_path):
+        return Response({"error": f"Item does not exist at: {abs_old_path}"})
 
     try:
-        # 1. Rename the file or folder in the file system
         os.rename(abs_old_path, abs_new_path)
-
-        # 2. Update database paths
-        FileAccess.objects.filter(file_path=old_path).update(file_path=new_rel_path)
-
-        return Response({'message': 'Renamed successfully'})
     except Exception as e:
-        return Response({'error': str(e)})
+        return Response({"error": str(e)})
+
+    rel_new_path = os.path.join(os.path.dirname(relative_path), new_name)
+
+    if os.path.isdir(abs_new_path):
+        FolderAccess.objects.filter(folder_path=relative_path).update(folder_path=rel_new_path)
+    else:
+        FileAccess.objects.filter(file_path=relative_path).update(file_path=rel_new_path)
+
+    return Response({"message": "Renamed successfully", "new_path": rel_new_path})
+
+
+def delete_file_folder(request):
+    path = request.data.get('path')
+
+    if not path:
+        return Response({"error": "Missing path"}, status=400)
+
+    # Convert /media/... to relative path
+    relative_path = path.replace('/media/', '')
+    abs_path = os.path.join(settings.MEDIA_ROOT, relative_path)
+
+    if not os.path.exists(abs_path):
+        return Response({"error": "Path does not exist"}, status=404)
+
+    try:
+        if os.path.isdir(abs_path):
+            shutil.rmtree(abs_path)
+            FolderAccess.objects.filter(folder_path=relative_path).delete()
+        else:
+            os.remove(abs_path)
+            FileAccess.objects.filter(file_path=relative_path).delete()
+    except Exception as e:
+        return Response({"error": str(e)})
+
+    return Response({"message": "Deleted successfully"})
+
+
+def create_folder(request):
+    name = request.data.get('name')
+    path = request.data.get('path')
+
+    if not name or not path:
+        return Response({"error": "Missing name or path"}, status=400)
+
+    abs_parent_path = os.path.join(settings.BASE_DIR, path)
+    abs_new_path = os.path.join(abs_parent_path, name)
+
+    if os.path.exists(abs_new_path):
+        return Response({"error": "Folder already exists"}, status=400)
+
+    try:
+        os.makedirs(abs_new_path)
+        FolderAccess.objects.create(
+            folder_path=os.path.join(path, name),
+            user=request.user,
+            can_view=True,
+            can_edit=False,
+            can_delete=False
+        )
+        return Response({"message": "Folder created successfully"})
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+    
+
+def create_file(request):
+    print('inside create file')
+
+    uploaded_file = request.FILES.get('file')
+    upload_path = request.POST.get('path') or ''  # Handle None or ''
+
+    print('uploaded file:', uploaded_file)
+    print('uploaded path:', upload_path)
+
+    if not uploaded_file:
+        return Response({"error": "Missing file"}, status=400)
+
+    # Handle empty path case
+    if upload_path.strip() == '':
+        dest_dir = settings.BASE_DIR  # Save to base directory
+        db_path = uploaded_file.name  # Save only file name in DB path
+    else:
+        dest_dir = os.path.join(settings.BASE_DIR, upload_path)
+        db_path = os.path.join(upload_path, uploaded_file.name)
+
+    # Make sure destination folder exists
+    os.makedirs(dest_dir, exist_ok=True)
+
+    # Save file to destination path
+    dest_path = os.path.join(dest_dir, uploaded_file.name)
+    with open(dest_path, 'wb+') as destination:
+        for chunk in uploaded_file.chunks():
+            destination.write(chunk)
+
+    print('db_path is: ', db_path)
+    print('before saving file to db')
+    FileAccess.objects.create(
+        file_path=db_path,
+        user=request.user,
+        can_view=True,
+        can_edit=True,
+        can_delete=True
+    )
+    print('saved')
+
+    return Response({"message": "File uploaded successfully"})
+
+
+def upload_fol(request):
+    print('inside folder')
+    uploaded_files = request.FILES.getlist('files')
+    base_path = request.POST.get('base_path', '').strip()
+
+    folder_paths_set = set()
+
+    for file in uploaded_files:
+        print('file.name: ', file.name)
+        relative_path = file.name  # webkitRelativePath like "myFolder/sub/file.txt"
+        full_path = os.path.join(base_path, relative_path)
+        abs_path = os.path.join(settings.BASE_DIR, full_path)
+
+        # Ensure all parent folders are created
+        parent_folder_path = os.path.dirname(full_path)
+        while parent_folder_path and parent_folder_path not in folder_paths_set:
+            abs_folder = os.path.join(settings.BASE_DIR, parent_folder_path)
+            os.makedirs(abs_folder, exist_ok=True)
+            folder_paths_set.add(parent_folder_path)
+
+            # Save to FolderAccess if not already present
+            FolderAccess.objects.get_or_create(
+                folder_path=parent_folder_path,
+                defaults={
+                    'user': request.user,
+                    'can_view': True,
+                    'can_edit': True,
+                    'can_delete': True
+                }
+            )
+            parent_folder_path = os.path.dirname(parent_folder_path)
+
+        # Now save the file
+        with open(abs_path, 'wb+') as destination:
+            for chunk in file.chunks():
+                destination.write(chunk)
+
+        FileAccess.objects.create(
+            file_path=full_path,
+            user=request.user,
+            can_view=True,
+            can_edit=True,
+            can_delete=True
+        )
+
+        return Response({"message": "Folder uploaded successfully"})

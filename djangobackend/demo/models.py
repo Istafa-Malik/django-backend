@@ -20,6 +20,10 @@ class FolderAccess(models.Model):
     can_view = models.BooleanField(default=True)
     can_edit = models.BooleanField(default=False)
     can_delete = models.BooleanField(default=False)
+    def save(self, *args, **kwargs):
+        if self.folder_path.startswith("djangobackend/"):
+            self.folder_path = self.folder_path.replace("djangobackend/", "", 1)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.user.username} → {self.folder_path}"

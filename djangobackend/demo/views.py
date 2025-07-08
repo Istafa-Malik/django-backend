@@ -3,7 +3,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from .serializers import LoginSerializer
 from rest_framework.permissions import IsAuthenticated
-from .middleware import get_folders, get_files, download, rename
+from .middleware import get_folders, get_files, download, rename, delete_file_folder, create_file, upload_fol
 from rest_framework_simplejwt.tokens import RefreshToken
 
 
@@ -47,3 +47,19 @@ def download_folder(request):
 @permission_classes([IsAuthenticated])
 def edit(request):
     return rename(request)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def delete(request):
+    return delete_file_folder(request)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def upload_folder(request):
+    return upload_fol(request)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create(request):
+    return create_file(request)

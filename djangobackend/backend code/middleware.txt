@@ -68,20 +68,25 @@ def get_folders(request):
 def get_files(request):
     user = request.user
     rel_folder_path = request.data.get("folder_path", "").strip()
-    abs_folder_path = os.path.join(settings.BASE_DIR, rel_folder_path)
 
-    if not rel_folder_path or not os.path.isdir(abs_folder_path):
+    if not rel_folder_path:
+        return Response({"error": "Folder path not provided."})
+
+    abs_folder_path = os.path.join(settings.BASE_DIR, rel_folder_path)
+    if not os.path.isdir(abs_folder_path):
         return Response({"error": "Invalid folder path."})
 
-    # === List Files ===
     all_files = [
         f for f in os.listdir(abs_folder_path)
         if os.path.isfile(os.path.join(abs_folder_path, f))
     ]
-    file_paths = [os.path.join(rel_folder_path, f) for f in all_files]
-    access_records = FileAccess.objects.filter(user=user, file_path__in=file_paths)
-    access_map = {record.file_path: record for record in access_records}
 
+    file_paths = [os.path.join(rel_folder_path, f) for f in all_files]
+    print('file paths: ', file_paths)
+    access_records = FileAccess.objects.filter(user=user, file_path__in=file_paths)
+    
+    access_map = {record.file_path: record for record in access_records}
+    print('access map: ',access_map)
     accessible_files = []
     for file_name in all_files:
         rel_file_path = os.path.join(rel_folder_path, file_name)
@@ -99,69 +104,10 @@ def get_files(request):
                 "download_url": download_url
             })
 
-    # === List Folders ===
-    all_folders = [
-        d for d in os.listdir(abs_folder_path)
-        if os.path.isdir(os.path.join(abs_folder_path, d))
-    ]
-    folder_access = FolderAccess.objects.filter(
-        user=user,
-        folder_path__in=[os.path.join(rel_folder_path, d) for d in all_folders],
-        can_view=True
-    )
-    accessible_folders = [f.folder_path for f in folder_access]
-
     return Response({
         "folder_path": rel_folder_path,
-        "files": accessible_files,
-        "folders": accessible_folders
+        "files": accessible_files
     })
-
-
-
-
-    # user = request.user
-    # rel_folder_path = request.data.get("folder_path", "").strip()
-
-    # if not rel_folder_path:
-    #     return Response({"error": "Folder path not provided."})
-
-    # abs_folder_path = os.path.join(settings.BASE_DIR, rel_folder_path)
-    # if not os.path.isdir(abs_folder_path):
-    #     return Response({"error": "Invalid folder path."})
-
-    # all_files = [
-    #     f for f in os.listdir(abs_folder_path)
-    #     if os.path.isfile(os.path.join(abs_folder_path, f))
-    # ]
-
-    # file_paths = [os.path.join(rel_folder_path, f) for f in all_files]
-    # print('file paths: ', file_paths)
-    # access_records = FileAccess.objects.filter(user=user, file_path__in=file_paths)
-    
-    # access_map = {record.file_path: record for record in access_records}
-    # print('access map: ',access_map)
-    # accessible_files = []
-    # for file_name in all_files:
-    #     rel_file_path = os.path.join(rel_folder_path, file_name)
-    #     access = access_map.get(rel_file_path)
-
-    #     if access and access.can_view:
-    #         file_url = f"{settings.MEDIA_URL}{rel_file_path}"
-    #         download_url = request.build_absolute_uri(f"/media/{rel_file_path}")
-    #         accessible_files.append({
-    #             "file_name": file_name,
-    #             "can_view": access.can_view,
-    #             "can_edit": access.can_edit,
-    #             "can_delete": access.can_delete,
-    #             "file_url": file_url,
-    #             "download_url": download_url
-    #         })
-
-    # return Response({
-    #     "folder_path": rel_folder_path,
-    #     "files": accessible_files
-    # })
 
 
 def download(request):
@@ -320,31 +266,25 @@ def create_file(request):
 
 def upload_fol(request):
     print('inside folder')
-
     uploaded_files = request.FILES.getlist('files')
-    relative_paths = request.POST.getlist('paths')
     base_path = request.POST.get('base_path', '').strip()
-    print('relative paths: ', relative_paths)
-    print('base path: ', base_path)
+
     folder_paths_set = set()
 
-    for i, file in enumerate(uploaded_files):
-        print('inside for loop')
-        rel_path = relative_paths[i] if i < len(relative_paths) else file.name
-        full_path = os.path.join(base_path, rel_path)
+    for file in uploaded_files:
+        print('file.name: ', file.name)
+        relative_path = file.name  # webkitRelativePath like "myFolder/sub/file.txt"
+        full_path = os.path.join(base_path, relative_path)
         abs_path = os.path.join(settings.BASE_DIR, full_path)
-        print('full path is: ', full_path)
-        print('abs path: ', abs_path)
-        print('→ Saving to:', full_path)
 
-        # Create parent folders
+        # Ensure all parent folders are created
         parent_folder_path = os.path.dirname(full_path)
-        print('parent folder: ', parent_folder_path)
         while parent_folder_path and parent_folder_path not in folder_paths_set:
             abs_folder = os.path.join(settings.BASE_DIR, parent_folder_path)
             os.makedirs(abs_folder, exist_ok=True)
             folder_paths_set.add(parent_folder_path)
 
+            # Save to FolderAccess if not already present
             FolderAccess.objects.get_or_create(
                 folder_path=parent_folder_path,
                 defaults={
@@ -356,7 +296,7 @@ def upload_fol(request):
             )
             parent_folder_path = os.path.dirname(parent_folder_path)
 
-        # Save file
+        # Now save the file
         with open(abs_path, 'wb+') as destination:
             for chunk in file.chunks():
                 destination.write(chunk)
@@ -369,60 +309,4 @@ def upload_fol(request):
             can_delete=True
         )
 
-    return Response({"message": "Folder uploaded successfully"})
-
-    # print('inside folder')
-    # uploaded_files = request.FILES.getlist('files')
-    # base_path = request.POST.get('base_path', '').strip()
-    # for file in uploaded_files:
-    #     print("== File object ==")
-    #     print("file.name:", file.name)
-    #     print("file:", file)
-    #     print("Content-Type:", file.content_type)
-
-    # folder_paths_set = set()
-
-    # for file in uploaded_files:
-    #     print('file is: ', file)
-    #     relative_path = file.name  # webkitRelativePath like "myFolder/sub/file.txt"
-    #     full_path = os.path.join(base_path, relative_path)
-    #     abs_path = os.path.join(settings.BASE_DIR, full_path)
-    #     print('relative_path:', relative_path)
-    #     print('full_path:', full_path)
-        
-
-    #     # Ensure all parent folders are created
-    #     parent_folder_path = os.path.dirname(full_path)
-    #     print('parent_folder_path:', parent_folder_path)
-    #     while parent_folder_path and parent_folder_path not in folder_paths_set:
-    #         abs_folder = os.path.join(settings.BASE_DIR, parent_folder_path)
-    #         os.makedirs(abs_folder, exist_ok=True)
-    #         folder_paths_set.add(parent_folder_path)
-    #         print('parent folder path is before saving: ', parent_folder_path)
-    #         # Save to FolderAccess if not already present
-    #         FolderAccess.objects.get_or_create(
-    #             folder_path=parent_folder_path,
-    #             defaults={
-    #                 'user': request.user,
-    #                 'can_view': True,
-    #                 'can_edit': True,
-    #                 'can_delete': True
-    #             }
-    #         )
-    #         parent_folder_path = os.path.dirname(parent_folder_path)
-    #         print('parent folder path is after saving: ', parent_folder_path)
-
-    #     # Now save the file
-    #     with open(abs_path, 'wb+') as destination:
-    #         for chunk in file.chunks():
-    #             destination.write(chunk)
-    #     print('file path is: ', full_path)
-    #     FileAccess.objects.create(
-    #         file_path=full_path,
-    #         user=request.user,
-    #         can_view=True,
-    #         can_edit=True,
-    #         can_delete=True
-    #     )
-
-    # return Response({"message": "Folder uploaded successfully"})
+        return Response({"message": "Folder uploaded successfully"})

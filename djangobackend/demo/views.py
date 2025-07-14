@@ -3,12 +3,12 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from .serializers import LoginSerializer
 from rest_framework.permissions import IsAuthenticated
-from .middleware import get_folders, get_files, download, rename, delete_file_folder, create_file, upload_fol
+from .middleware import get_folders, get_files, download, rename, delete_file_folder, create_file, upload_fol, create_folder
 from rest_framework_simplejwt.tokens import RefreshToken
 
 
 @api_view(['POST'])
-def login_view(request):
+def login(request):
     serializer = LoginSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.validated_data['user']
@@ -63,3 +63,24 @@ def upload_folder(request):
 @permission_classes([IsAuthenticated])
 def create(request):
     return create_file(request)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_fold(request):
+    return create_folder(request)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def logout(request):
+    print('logout')
+    try:
+        print('req body is: ', request.data)
+        refresh_token = request.data.get("refresh")
+        if refresh_token is None:
+            return Response({"error": "Refresh token is required"})
+        token = RefreshToken(refresh_token)
+        token.blacklist()
+        return Response({"detail": "Logout successful"})
+    except Exception as e:
+        return Response({"error": str(e)})

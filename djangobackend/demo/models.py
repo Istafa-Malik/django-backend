@@ -38,3 +38,16 @@ class FileAccess(models.Model):
         if self.file_path.startswith("djangobackend/"):
             self.file_path = self.file_path.replace("djangobackend/", "", 1)
         super().save(*args, **kwargs)
+
+
+class EnvironmentConfig(models.Model):
+    ENV_CHOICES = [
+        ('development', 'Development'),
+        ('production', 'Production'),
+    ]
+
+    environment = models.CharField(max_length=20, choices=ENV_CHOICES, unique=True)
+    base_url = models.URLField(help_text="Base domain URL like https://example.com")
+
+    def __str__(self):
+        return f"{self.environment} → {self.base_url}"

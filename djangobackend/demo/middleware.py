@@ -104,64 +104,40 @@ def get_files(request):
         d for d in os.listdir(abs_folder_path)
         if os.path.isdir(os.path.join(abs_folder_path, d))
     ]
-    folder_access = FolderAccess.objects.filter(
+
+    # Full paths like test_folder_1/subfolder_name
+    full_folder_paths = [os.path.join(rel_folder_path, d) for d in all_folders]
+
+    # Fetch permissions for those folders
+    folder_access_records = FolderAccess.objects.filter(
         user=user,
-        folder_path__in=[os.path.join(rel_folder_path, d) for d in all_folders],
+        folder_path__in=full_folder_paths,
         can_view=True
     )
-    accessible_folders = [f.folder_path for f in folder_access]
 
+    # Build a map for quick lookup
+    folder_access_map = {f.folder_path: f for f in folder_access_records}
+
+    # Prepare folder list with permissions
+    accessible_folders = []
+    for folder_name in all_folders:
+        folder_rel_path = os.path.join(rel_folder_path, folder_name)
+        access = folder_access_map.get(folder_rel_path)
+        if access:
+            accessible_folders.append({
+                "name": folder_name,
+                "path": folder_rel_path,
+                "can_view": access.can_view,
+                "can_edit": access.can_edit,
+                "can_delete": access.can_delete
+            })
+
+    # === Final Response ===
     return Response({
         "folder_path": rel_folder_path,
         "files": accessible_files,
         "folders": accessible_folders
     })
-
-
-
-
-    # user = request.user
-    # rel_folder_path = request.data.get("folder_path", "").strip()
-
-    # if not rel_folder_path:
-    #     return Response({"error": "Folder path not provided."})
-
-    # abs_folder_path = os.path.join(settings.BASE_DIR, rel_folder_path)
-    # if not os.path.isdir(abs_folder_path):
-    #     return Response({"error": "Invalid folder path."})
-
-    # all_files = [
-    #     f for f in os.listdir(abs_folder_path)
-    #     if os.path.isfile(os.path.join(abs_folder_path, f))
-    # ]
-
-    # file_paths = [os.path.join(rel_folder_path, f) for f in all_files]
-    # print('file paths: ', file_paths)
-    # access_records = FileAccess.objects.filter(user=user, file_path__in=file_paths)
-    
-    # access_map = {record.file_path: record for record in access_records}
-    # print('access map: ',access_map)
-    # accessible_files = []
-    # for file_name in all_files:
-    #     rel_file_path = os.path.join(rel_folder_path, file_name)
-    #     access = access_map.get(rel_file_path)
-
-    #     if access and access.can_view:
-    #         file_url = f"{settings.MEDIA_URL}{rel_file_path}"
-    #         download_url = request.build_absolute_uri(f"/media/{rel_file_path}")
-    #         accessible_files.append({
-    #             "file_name": file_name,
-    #             "can_view": access.can_view,
-    #             "can_edit": access.can_edit,
-    #             "can_delete": access.can_delete,
-    #             "file_url": file_url,
-    #             "download_url": download_url
-    #         })
-
-    # return Response({
-    #     "folder_path": rel_folder_path,
-    #     "files": accessible_files
-    # })
 
 
 def download(request):
@@ -170,8 +146,10 @@ def download(request):
         return Response({"error": "No folder path provided"}, status=400)
 
     abs_folder_path = os.path.join(settings.BASE_DIR, folder_path)
-    if not os.path.exists(abs_folder_path) or not os.path.isdir(abs_folder_path):
-        raise Http404("Folder not found")
+    # if not os.path.exists(abs_folder_path) or not os.path.isdir(abs_folder_path):
+    #     raise Http404("Folder not found")
+    if not FolderAccess.objects.filter(folder_path=folder_path, user=request.user).exists():
+        raise Http404("Folder not found in database")
 
     # Create zip in memory
     zip_stream = io.BytesIO()
@@ -195,11 +173,11 @@ def rename(request):
         return Response({"error": "Missing old_path or new_name"})
 
     # Strip '/media/' only if present in the path
-    if old_path.startswith('/media/'):
-        relative_path = old_path[len('/media/'):]  # remove '/media/'
-    else:
-        relative_path = old_path  # assume already relative
-
+    # if old_path.startswith('/media/'):
+    #     relative_path = old_path[len('/media/'):]  # remove '/media/'
+    # else:
+    #     relative_path = old_path  # assume already relative
+    relative_path = old_path
     abs_old_path = os.path.join(settings.MEDIA_ROOT, relative_path)
     dir_name = os.path.dirname(abs_old_path)
     abs_new_path = os.path.join(dir_name, new_name)
@@ -250,29 +228,37 @@ def delete_file_folder(request):
 
 def create_folder(request):
     name = request.data.get('name')
-    path = request.data.get('path')
-
-    if not name or not path:
-        return Response({"error": "Missing name or path"}, status=400)
+    path = request.data.get('path') or '.'
+    clean_path = os.path.join(path, name)
+    if clean_path.startswith('./'):
+        clean_path = clean_path[2:]
 
     abs_parent_path = os.path.join(settings.BASE_DIR, path)
     abs_new_path = os.path.join(abs_parent_path, name)
 
+    if FolderAccess.objects.filter(folder_path=clean_path).exists():
+        return Response({"error": "Folder already exists in database"}, status=400)
+
     if os.path.exists(abs_new_path):
-        return Response({"error": "Folder already exists"}, status=400)
+        print("Folder exists on disk but not in DB. Re-using it.")
 
     try:
-        os.makedirs(abs_new_path)
+        os.makedirs(abs_new_path, exist_ok=True)
+
+        # Register in DB
         FolderAccess.objects.create(
-            folder_path=os.path.join(path, name),
+            folder_path=clean_path,
             user=request.user,
             can_view=True,
             can_edit=False,
             can_delete=False
         )
         return Response({"message": "Folder created successfully"})
+
     except Exception as e:
         return Response({"error": str(e)}, status=500)
+
+
     
 
 def create_file(request):

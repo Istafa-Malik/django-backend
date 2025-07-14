@@ -6,6 +6,33 @@ from django.http import FileResponse, HttpResponseBadRequest, Http404
 import zipfile
 import io
 import shutil
+from .serializers import LoginSerializer
+from rest_framework_simplejwt.tokens import RefreshToken
+
+
+def login_user(request):
+    serializer = LoginSerializer(data=request.data)
+    if serializer.is_valid():
+        user = serializer.validated_data['user']
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            "message": "Login successful",
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            })
+    return Response(serializer.errors)
+
+def logout_user(request):
+    try:
+        print('req body is: ', request.data)
+        refresh_token = request.data.get("refresh")
+        if refresh_token is None:
+            return Response({"error": "Refresh token is required"})
+        token = RefreshToken(refresh_token)
+        token.blacklist()
+        return Response({"detail": "Logout successful"})
+    except Exception as e:
+        return Response({"error": str(e)})
 
 def get_folders(request):
     user = request.user
@@ -17,7 +44,7 @@ def get_folders(request):
     
     for entry in access_entries:
         rel_folder_path = entry.folder_path
-        abs_folder_path = os.path.join(settings.BASE_DIR, rel_folder_path)
+        abs_folder_path = os.path.join(settings.MEDIA_ROOT, rel_folder_path)
 
         try:
             all_items = os.listdir(abs_folder_path)
@@ -45,7 +72,7 @@ def get_folders(request):
 # def get_file_access(request):
 #     user = request.user
 #     rel_file_path = request.data.get("file_path", "").strip()
-#     abs_file_path = os.path.join(settings.BASE_DIR, rel_file_path)
+#     abs_file_path = os.path.join(settings.MEDIA_ROOT, rel_file_path)
 
 #     if not os.path.isfile(abs_file_path):
 #         return Response({"error": f"{rel_file_path} is not a valid file."}, status=400)
@@ -68,7 +95,7 @@ def get_folders(request):
 def get_files(request):
     user = request.user
     rel_folder_path = request.data.get("folder_path", "").strip()
-    abs_folder_path = os.path.join(settings.BASE_DIR, rel_folder_path)
+    abs_folder_path = os.path.join(settings.MEDIA_ROOT, rel_folder_path)
 
     if not rel_folder_path or not os.path.isdir(abs_folder_path):
         return Response({"error": "Invalid folder path."})
@@ -145,7 +172,7 @@ def download(request):
     if not folder_path:
         return Response({"error": "No folder path provided"}, status=400)
 
-    abs_folder_path = os.path.join(settings.BASE_DIR, folder_path)
+    abs_folder_path = os.path.join(settings.MEDIA_ROOT, folder_path)
     # if not os.path.exists(abs_folder_path) or not os.path.isdir(abs_folder_path):
     #     raise Http404("Folder not found")
     if not FolderAccess.objects.filter(folder_path=folder_path, user=request.user).exists():
@@ -211,7 +238,7 @@ def delete_file_folder(request):
     abs_path = os.path.join(settings.MEDIA_ROOT, relative_path)
 
     if not os.path.exists(abs_path):
-        return Response({"error": "Path does not exist"}, status=404)
+        return Response({"error": "Path does not exist"})
 
     try:
         if os.path.isdir(abs_path):
@@ -233,7 +260,7 @@ def create_folder(request):
     if clean_path.startswith('./'):
         clean_path = clean_path[2:]
 
-    abs_parent_path = os.path.join(settings.BASE_DIR, path)
+    abs_parent_path = os.path.join(settings.MEDIA_ROOT, path)
     abs_new_path = os.path.join(abs_parent_path, name)
 
     if FolderAccess.objects.filter(folder_path=clean_path).exists():
@@ -256,7 +283,7 @@ def create_folder(request):
         return Response({"message": "Folder created successfully"})
 
     except Exception as e:
-        return Response({"error": str(e)}, status=500)
+        return Response({"error": str(e)})
 
 
     
@@ -275,10 +302,10 @@ def create_file(request):
 
     # Handle empty path case
     if upload_path.strip() == '':
-        dest_dir = settings.BASE_DIR  # Save to base directory
+        dest_dir = settings.MEDIA_ROOT  # Save to base directory
         db_path = uploaded_file.name  # Save only file name in DB path
     else:
-        dest_dir = os.path.join(settings.BASE_DIR, upload_path)
+        dest_dir = os.path.join(settings.MEDIA_ROOT, upload_path)
         db_path = os.path.join(upload_path, uploaded_file.name)
 
     # Make sure destination folder exists
@@ -318,7 +345,7 @@ def upload_fol(request):
         print('inside for loop')
         rel_path = relative_paths[i] if i < len(relative_paths) else file.name
         full_path = os.path.join(base_path, rel_path)
-        abs_path = os.path.join(settings.BASE_DIR, full_path)
+        abs_path = os.path.join(settings.MEDIA_ROOT, full_path)
         print('full path is: ', full_path)
         print('abs path: ', abs_path)
         print('→ Saving to:', full_path)
@@ -327,7 +354,7 @@ def upload_fol(request):
         parent_folder_path = os.path.dirname(full_path)
         print('parent folder: ', parent_folder_path)
         while parent_folder_path and parent_folder_path not in folder_paths_set:
-            abs_folder = os.path.join(settings.BASE_DIR, parent_folder_path)
+            abs_folder = os.path.join(settings.MEDIA_ROOT, parent_folder_path)
             os.makedirs(abs_folder, exist_ok=True)
             folder_paths_set.add(parent_folder_path)
 
@@ -356,59 +383,3 @@ def upload_fol(request):
         )
 
     return Response({"message": "Folder uploaded successfully"})
-
-    # print('inside folder')
-    # uploaded_files = request.FILES.getlist('files')
-    # base_path = request.POST.get('base_path', '').strip()
-    # for file in uploaded_files:
-    #     print("== File object ==")
-    #     print("file.name:", file.name)
-    #     print("file:", file)
-    #     print("Content-Type:", file.content_type)
-
-    # folder_paths_set = set()
-
-    # for file in uploaded_files:
-    #     print('file is: ', file)
-    #     relative_path = file.name  # webkitRelativePath like "myFolder/sub/file.txt"
-    #     full_path = os.path.join(base_path, relative_path)
-    #     abs_path = os.path.join(settings.BASE_DIR, full_path)
-    #     print('relative_path:', relative_path)
-    #     print('full_path:', full_path)
-        
-
-    #     # Ensure all parent folders are created
-    #     parent_folder_path = os.path.dirname(full_path)
-    #     print('parent_folder_path:', parent_folder_path)
-    #     while parent_folder_path and parent_folder_path not in folder_paths_set:
-    #         abs_folder = os.path.join(settings.BASE_DIR, parent_folder_path)
-    #         os.makedirs(abs_folder, exist_ok=True)
-    #         folder_paths_set.add(parent_folder_path)
-    #         print('parent folder path is before saving: ', parent_folder_path)
-    #         # Save to FolderAccess if not already present
-    #         FolderAccess.objects.get_or_create(
-    #             folder_path=parent_folder_path,
-    #             defaults={
-    #                 'user': request.user,
-    #                 'can_view': True,
-    #                 'can_edit': True,
-    #                 'can_delete': True
-    #             }
-    #         )
-    #         parent_folder_path = os.path.dirname(parent_folder_path)
-    #         print('parent folder path is after saving: ', parent_folder_path)
-
-    #     # Now save the file
-    #     with open(abs_path, 'wb+') as destination:
-    #         for chunk in file.chunks():
-    #             destination.write(chunk)
-    #     print('file path is: ', full_path)
-    #     FileAccess.objects.create(
-    #         file_path=full_path,
-    #         user=request.user,
-    #         can_view=True,
-    #         can_edit=True,
-    #         can_delete=True
-    #     )
-
-    # return Response({"message": "Folder uploaded successfully"})

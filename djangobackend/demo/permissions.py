@@ -1,4 +1,4 @@
-from models import FolderAccess, FileAccess
+from .models import FolderAccess, FileAccess
 
 
 

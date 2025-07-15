@@ -1,6 +1,6 @@
 import os
 from rest_framework.response import Response
-from .models import FolderAccess, FileAccess
+from .models import FolderAccess, FileAccess, User
 from django.conf import settings
 from django.http import FileResponse, HttpResponseBadRequest, Http404
 import zipfile
@@ -8,23 +8,29 @@ import io
 import shutil
 from .serializers import LoginSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
+from .permissions import is_admin, can_delete_folder, can_rename_folder, can_view_folder
 
 
 def login_user(request):
     serializer = LoginSerializer(data=request.data)
     if serializer.is_valid():
+        print('validated data is: ', serializer.validated_data)
         user = serializer.validated_data['user']
         refresh = RefreshToken.for_user(user)
+        user_data = {
+            "username": user.username,
+            "role": user.role 
+        }
         return Response({
             "message": "Login successful",
             "access": str(refresh.access_token),
             "refresh": str(refresh),
+            "user_data": user_data
             })
     return Response(serializer.errors)
 
 def logout_user(request):
     try:
-        print('req body is: ', request.data)
         refresh_token = request.data.get("refresh")
         if refresh_token is None:
             return Response({"error": "Refresh token is required"})
@@ -37,33 +43,85 @@ def logout_user(request):
 def get_folders(request):
     user = request.user
     folders = []
-    access_entries = FolderAccess.objects.filter(user=user, can_view=True)
-    
-    if not access_entries.exists():
-        return Response({"error": "You do not have access to any folders."})
-    
-    for entry in access_entries:
-        rel_folder_path = entry.folder_path
-        abs_folder_path = os.path.join(settings.MEDIA_ROOT, rel_folder_path)
+    db_entries = FolderAccess.objects.filter(user=user)
+    db_has_folders = db_entries.exists()
+    print('db folders: ', db_has_folders)
+    # Check folders on disk (excluding hidden)
+    try:
+        disk_folders = [
+            name for name in os.listdir(settings.MEDIA_ROOT)
+            if os.path.isdir(os.path.join(settings.MEDIA_ROOT, name)) and not name.startswith('.')
+        ]
+    except FileNotFoundError:
+        disk_folders = []
 
+    disk_has_folders = len(disk_folders) > 0
+    print('disk has folders: ', disk_has_folders)
+    # Final check
+    if not db_has_folders and not disk_has_folders:
+        return Response({"message": "No folders found."})
+    # If user is admin → list all folders from MEDIA_ROOT
+    if is_admin(user):
         try:
-            all_items = os.listdir(abs_folder_path)
-            subfolders = [
-                f for f in all_items
-                if os.path.isdir(os.path.join(abs_folder_path, f)) and not f.startswith('.')
+            top_level_folders = [
+                f for f in os.listdir(settings.MEDIA_ROOT)
+                if os.path.isdir(os.path.join(settings.MEDIA_ROOT, f)) and not f.startswith('.')
             ]
         except Exception:
-            subfolders = []
+            top_level_folders = []
 
-        folders.append({
-            "folder_path": rel_folder_path,
-            "can_view": entry.can_view,
-            "can_edit": entry.can_edit,
-            "can_delete": entry.can_delete,
-            "subfolders": subfolders
-        })
+        for folder in top_level_folders:
+            abs_folder_path = os.path.join(settings.MEDIA_ROOT, folder)
+            try:
+                all_items = os.listdir(abs_folder_path)
+                subfolders = [
+                    sf for sf in all_items
+                    if os.path.isdir(os.path.join(abs_folder_path, sf)) and not sf.startswith('.')
+                ]
+            except Exception:
+                subfolders = []
+
+            folders.append({
+                "folder_path": folder,
+                "can_view": True,
+                "can_edit": True,
+                "can_delete": True,
+                "subfolders": subfolders
+            })
+
+    else:
+        # Regular user → only include folders they have view access to
+        access_entries = FolderAccess.objects.filter(user=user)
+
+        if not access_entries.exists():
+            return Response({"error": "You do not have access to any folders."})
+
+        for entry in access_entries:
+            rel_folder_path = entry.folder_path
+
+            if not can_view_folder(user, rel_folder_path):
+                continue  # Just to double-check access
+
+            abs_folder_path = os.path.join(settings.MEDIA_ROOT, rel_folder_path)
+            try:
+                all_items = os.listdir(abs_folder_path)
+                subfolders = [
+                    f for f in all_items
+                    if os.path.isdir(os.path.join(abs_folder_path, f)) and not f.startswith('.')
+                ]
+            except Exception:
+                subfolders = []
+
+            folders.append({
+                "folder_path": rel_folder_path,
+                "can_view": True,
+                "can_edit": can_rename_folder(user, rel_folder_path),
+                "can_delete": can_delete_folder(user, rel_folder_path),
+                "subfolders": subfolders
+            })
 
     return Response({"folders": folders})
+
 
                                             #Following function can be used as a specific access/permission function for a better code structure
                                             #for now I have commented it.
@@ -383,3 +441,18 @@ def upload_fol(request):
         )
 
     return Response({"message": "Folder uploaded successfully"})
+
+
+def users(request):
+    if request.user.role == 'admin' or request.user.role == 'Admin':
+        users = User.objects.all().values('username')
+        return Response({"users": users})
+    else:
+        return Response({"Error":"User is not admin"})
+    
+
+def folders(request):
+    folders = FolderAccess.objects.values_list('folder_path', flat=True).distinct()
+    return Response({
+        "folders": [{"folder_path": path} for path in folders]
+    })

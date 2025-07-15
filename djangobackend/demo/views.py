@@ -3,7 +3,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from .serializers import LoginSerializer
 from rest_framework.permissions import IsAuthenticated
-from .middleware import get_folders, get_files, download, rename, delete_file_folder, create_file, upload_fol, create_folder, login_user, logout_user
+from .middleware import get_folders, get_files, download, rename, delete_file_folder, create_file, upload_fol, create_folder, login_user, logout_user, users, folders
 
 @api_view(['POST'])
 def login(request):
@@ -64,4 +64,12 @@ def create_fold(request):
     return create_folder(request)
 
 
-    
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_users(request):
+    return users(request)        
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_folders(request):
+    return folders(request)

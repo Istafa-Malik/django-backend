@@ -74,15 +74,6 @@ CSRF_TRUSTED_ORIGINS = [
     "http://localhost:4200",
 ]
 
-# SESSION_COOKIE_SAMESITE = 'Lax'
-# SESSION_COOKIE_SECURE = False
-
-# CSRF_COOKIE_SAMESITE = 'Lax'
-# CSRF_COOKIE_SECURE = False 
-# CSRF_COOKIE_HTTPONLY = False
-# CSRF_COOKIE_SAMESITE = 'None'
-# CSRF_COOKIE_SECURE = True 
-
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

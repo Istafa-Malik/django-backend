@@ -1,5 +1,9 @@
 from django.contrib.auth import authenticate
 from rest_framework import serializers
+from django.contrib.auth import get_user_model
+
+User = get_user_model
+
 
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField()
@@ -11,3 +15,16 @@ class LoginSerializer(serializers.Serializer):
             data['user'] = user
             return data
         raise serializers.ValidationError("Invalid username or password")
+
+
+class BulkFolderAccessSerializer(serializers.Serializer):
+    username = serializers.CharField()
+    folder_path = serializers.CharField()
+    can_view = serializers.BooleanField(default=True)
+    can_edit = serializers.BooleanField(default=False)
+    can_delete = serializers.BooleanField(default=False)
+
+    def validate_username(self, value):
+        if not User.objects.filter(username=value).exists():
+            raise serializers.ValidationError(f"User '{value} does not exist")
+        return value

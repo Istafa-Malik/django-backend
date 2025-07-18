@@ -6,7 +6,7 @@ from django.http import FileResponse, HttpResponseBadRequest, Http404
 import zipfile
 import io
 import shutil
-from .serializers import LoginSerializer
+from .serializers import LoginSerializer, BulkFolderAccessSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from .permissions import is_admin, can_delete_folder, can_rename_folder, can_view_folder
 
@@ -41,6 +41,7 @@ def logout_user(request):
         return Response({"error": str(e)})
 
 def get_folders(request):
+    print('inside get folder')
     user = request.user
     folders = []
     db_entries = FolderAccess.objects.filter(user=user)
@@ -57,10 +58,8 @@ def get_folders(request):
 
     disk_has_folders = len(disk_folders) > 0
     print('disk has folders: ', disk_has_folders)
-    # Final check
     if not db_has_folders and not disk_has_folders:
         return Response({"message": "No folders found."})
-    # If user is admin → list all folders from MEDIA_ROOT
     if is_admin(user):
         try:
             top_level_folders = [
@@ -119,7 +118,7 @@ def get_folders(request):
                 "can_delete": can_delete_folder(user, rel_folder_path),
                 "subfolders": subfolders
             })
-
+    print('before sending dashboard api response: ', folders)
     return Response({"folders": folders})
 
 
@@ -150,6 +149,95 @@ def get_folders(request):
 
 
 
+# def get_files(request):
+#     user = request.user
+#     rel_folder_path = request.data.get("folder_path", "").strip()
+#     abs_folder_path = os.path.join(settings.MEDIA_ROOT, rel_folder_path)
+
+#     if not rel_folder_path or not os.path.isdir(abs_folder_path):
+#         return Response({"error": "Invalid folder path."})
+
+#     # === List Files ===
+#     all_files = [
+#         f for f in os.listdir(abs_folder_path)
+#         if os.path.isfile(os.path.join(abs_folder_path, f))
+#     ]
+#     file_paths = [os.path.join(rel_folder_path, f) for f in all_files]
+#     access_records = FileAccess.objects.filter(user=user, file_path__in=file_paths)
+#     access_map = {record.file_path: record for record in access_records}
+
+#     accessible_files = []
+#     if is_admin(user):
+#          for file_name in all_files:
+#             rel_file_path = os.path.join(rel_folder_path, file_name)
+#             file_url = f"{settings.MEDIA_URL}{rel_file_path}"
+#             download_url = request.build_absolute_uri(f"/media/{rel_file_path}")
+#             accessible_files.append({
+#                 "file_name": file_name,
+#                 "can_view": True,
+#                 "can_edit": True,
+#                 "can_delete": True,
+#                 "file_url": file_url,
+#                 "download_url": download_url
+#             })
+#     else:
+#         for file_name in all_files:
+#             rel_file_path = os.path.join(rel_folder_path, file_name)
+#             access = access_map.get(rel_file_path)
+
+#             if access and access.can_view:
+#                 file_url = f"{settings.MEDIA_URL}{rel_file_path}"
+#                 download_url = request.build_absolute_uri(f"/media/{rel_file_path}")
+#                 accessible_files.append({
+#                     "file_name": file_name,
+#                     "can_view": access.can_view,
+#                     "can_edit": access.can_edit,
+#                     "can_delete": access.can_delete,
+#                     "file_url": file_url,
+#                     "download_url": download_url
+#                 })
+
+#         # === List Folders ===
+#         all_folders = [
+#             d for d in os.listdir(abs_folder_path)
+#             if os.path.isdir(os.path.join(abs_folder_path, d))
+#         ]
+
+#         # Full paths like test_folder_1/subfolder_name
+#         full_folder_paths = [os.path.join(rel_folder_path, d) for d in all_folders]
+
+#         # Fetch permissions for those folders
+#         folder_access_records = FolderAccess.objects.filter(
+#             user=user,
+#             folder_path__in=full_folder_paths,
+#             can_view=True
+#         )
+
+#         # Build a map for quick lookup
+#         folder_access_map = {f.folder_path: f for f in folder_access_records}
+
+#         # Prepare folder list with permissions
+#         accessible_folders = []
+#         for folder_name in all_folders:
+#             folder_rel_path = os.path.join(rel_folder_path, folder_name)
+#             access = folder_access_map.get(folder_rel_path)
+#             if access:
+#                 accessible_folders.append({
+#                     "name": folder_name,
+#                     "path": folder_rel_path,
+#                     "can_view": access.can_view,
+#                     "can_edit": access.can_edit,
+#                     "can_delete": access.can_delete
+#                 })
+
+#         # === Final Response ===
+#         return Response({
+#             "folder_path": rel_folder_path,
+#             "files": accessible_files,
+#             "folders": accessible_folders
+#         })
+
+
 def get_files(request):
     user = request.user
     rel_folder_path = request.data.get("folder_path", "").strip()
@@ -164,25 +252,42 @@ def get_files(request):
         if os.path.isfile(os.path.join(abs_folder_path, f))
     ]
     file_paths = [os.path.join(rel_folder_path, f) for f in all_files]
-    access_records = FileAccess.objects.filter(user=user, file_path__in=file_paths)
-    access_map = {record.file_path: record for record in access_records}
 
     accessible_files = []
-    for file_name in all_files:
-        rel_file_path = os.path.join(rel_folder_path, file_name)
-        access = access_map.get(rel_file_path)
 
-        if access and access.can_view:
+    if is_admin(user):
+        # Admin sees all files with full permissions
+        for file_name in all_files:
+            rel_file_path = os.path.join(rel_folder_path, file_name)
             file_url = f"{settings.MEDIA_URL}{rel_file_path}"
             download_url = request.build_absolute_uri(f"/media/{rel_file_path}")
             accessible_files.append({
                 "file_name": file_name,
-                "can_view": access.can_view,
-                "can_edit": access.can_edit,
-                "can_delete": access.can_delete,
+                "can_view": True,
+                "can_edit": True,
+                "can_delete": True,
                 "file_url": file_url,
                 "download_url": download_url
             })
+    else:
+        access_records = FileAccess.objects.filter(user=user, file_path__in=file_paths)
+        access_map = {record.file_path: record for record in access_records}
+
+        for file_name in all_files:
+            rel_file_path = os.path.join(rel_folder_path, file_name)
+            access = access_map.get(rel_file_path)
+
+            if access and access.can_view:
+                file_url = f"{settings.MEDIA_URL}{rel_file_path}"
+                download_url = request.build_absolute_uri(f"/media/{rel_file_path}")
+                accessible_files.append({
+                    "file_name": file_name,
+                    "can_view": access.can_view,
+                    "can_edit": access.can_edit,
+                    "can_delete": access.can_delete,
+                    "file_url": file_url,
+                    "download_url": download_url
+                })
 
     # === List Folders ===
     all_folders = [
@@ -190,34 +295,41 @@ def get_files(request):
         if os.path.isdir(os.path.join(abs_folder_path, d))
     ]
 
-    # Full paths like test_folder_1/subfolder_name
     full_folder_paths = [os.path.join(rel_folder_path, d) for d in all_folders]
 
-    # Fetch permissions for those folders
-    folder_access_records = FolderAccess.objects.filter(
-        user=user,
-        folder_path__in=full_folder_paths,
-        can_view=True
-    )
-
-    # Build a map for quick lookup
-    folder_access_map = {f.folder_path: f for f in folder_access_records}
-
-    # Prepare folder list with permissions
     accessible_folders = []
-    for folder_name in all_folders:
-        folder_rel_path = os.path.join(rel_folder_path, folder_name)
-        access = folder_access_map.get(folder_rel_path)
-        if access:
+
+    if is_admin(user):
+        # Admin sees all subfolders with full permissions
+        for folder_name in all_folders:
+            folder_rel_path = os.path.join(rel_folder_path, folder_name)
             accessible_folders.append({
                 "name": folder_name,
                 "path": folder_rel_path,
-                "can_view": access.can_view,
-                "can_edit": access.can_edit,
-                "can_delete": access.can_delete
+                "can_view": True,
+                "can_edit": True,
+                "can_delete": True
             })
+    else:
+        folder_access_records = FolderAccess.objects.filter(
+            user=user,
+            folder_path__in=full_folder_paths,
+            can_view=True
+        )
+        folder_access_map = {f.folder_path: f for f in folder_access_records}
 
-    # === Final Response ===
+        for folder_name in all_folders:
+            folder_rel_path = os.path.join(rel_folder_path, folder_name)
+            access = folder_access_map.get(folder_rel_path)
+            if access:
+                accessible_folders.append({
+                    "name": folder_name,
+                    "path": folder_rel_path,
+                    "can_view": access.can_view,
+                    "can_edit": access.can_edit,
+                    "can_delete": access.can_delete
+                })
+
     return Response({
         "folder_path": rel_folder_path,
         "files": accessible_files,
@@ -456,3 +568,79 @@ def folders(request):
     return Response({
         "folders": [{"folder_path": path} for path in folders]
     })
+
+
+def folder_access(request):
+    print('inside folder access middleware')
+
+    for item in request.data:
+        usernames = item.get("username", [])
+        folder_paths = item.get("folder_path", [])
+        can_view = item.get("can_view", True)
+        can_edit = item.get("can_edit", False)
+        can_delete = item.get("can_delete", False)
+
+    print('after for loop')
+
+    if isinstance(usernames, str):
+        usernames = [usernames]
+    if isinstance(folder_paths, str):
+        folder_paths = [folder_paths]
+
+    print('validating users, folders')
+    if not User.objects.filter(username__in=usernames).exists():
+        print('if not user')
+        return Response({"error": "One or more users do not exist."})
+    if not folder_paths:
+        print('if not folder')
+        return Response({"error": "No folder paths provided."})
+
+    print('after validation')
+    updated_objs = []
+
+    for username in usernames:
+        user = User.objects.get(username=username)
+        print('user: ', user)
+
+        for folder_path in folder_paths:
+            print('folder_path: ', folder_path)
+
+            # Assign folder-level access
+            obj, created = FolderAccess.objects.get_or_create(
+                user=user,
+                folder_path=folder_path,
+                defaults={
+                    'can_view': can_view,
+                    'can_edit': can_edit,
+                    'can_delete': can_delete,
+                }
+            )
+            if not created:
+                obj.can_view = can_view
+                obj.can_edit = can_edit
+                obj.can_delete = can_delete
+            updated_objs.append(obj)
+
+            # Grant access to files/subfolders within the folder
+            full_folder_path = os.path.join(settings.MEDIA_ROOT, folder_path)
+            if os.path.exists(full_folder_path):
+                for item in os.listdir(full_folder_path):
+                    if not item.startswith('.'):  # skip hidden
+                        item_path = os.path.join(folder_path, item)  # relative path
+                        FileAccess.objects.update_or_create(
+                            user=user,
+                            file_path=item_path,
+                            defaults={
+                                "can_view": can_view,
+                                "can_edit": can_edit,
+                                "can_delete": can_delete
+                            }
+                        )
+
+    # Save updated folder access records
+    if len(updated_objs) == 1:
+        updated_objs[0].save()
+    elif len(updated_objs) > 1:
+        FolderAccess.objects.bulk_update(updated_objs, ['can_view', 'can_edit', 'can_delete'])
+
+    return Response({"message": f"Permissions assigned to {len(updated_objs)} folder records, and their files."})

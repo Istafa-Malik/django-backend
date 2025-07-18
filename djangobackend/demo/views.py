@@ -20,14 +20,10 @@ def logout(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def list_folders(request):
-#    return get_folders(request)
-    print('inside get folder')
     user = request.user
     folders = []
     db_entries = FolderAccess.objects.filter(user=user)
     db_has_folders = db_entries.exists()
-    print('db folders: ', db_has_folders)
-    # Check folders on disk (excluding hidden)
     try:
         disk_folders = [
             name for name in os.listdir(settings.MEDIA_ROOT)
@@ -37,11 +33,8 @@ def list_folders(request):
         disk_folders = []
 
     disk_has_folders = len(disk_folders) > 0
-    print('disk has folders: ', disk_has_folders)
-    # Final check
     if not db_has_folders and not disk_has_folders:
         return Response({"message": "No folders found."})
-    # If user is admin → list all folders from MEDIA_ROOT
     if is_admin(user):
         try:
             top_level_folders = [
@@ -71,7 +64,6 @@ def list_folders(request):
             })
 
     else:
-        # Regular user → only include folders they have view access to
         access_entries = FolderAccess.objects.filter(user=user)
 
         if not access_entries.exists():
@@ -81,7 +73,7 @@ def list_folders(request):
             rel_folder_path = entry.folder_path
 
             if not can_view_folder(user, rel_folder_path):
-                continue  # Just to double-check access
+                continue
 
             abs_folder_path = os.path.join(settings.MEDIA_ROOT, rel_folder_path)
             try:

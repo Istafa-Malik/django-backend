@@ -6,7 +6,7 @@ from django.conf import settings
 from .permissions import is_admin, can_view_folder, can_rename_folder, can_delete_folder
 from .serializers import LoginSerializer
 from rest_framework.permissions import IsAuthenticated
-from .middleware import get_folders, get_files, download, rename, delete_file_folder, create_file, upload_fol, create_folder, login_user, logout_user, users, folders, folder_access
+from .middleware import get_files, download, rename, delete_file_folder, create_file, upload_fol, create_folder, login_user, logout_user, users, folders, folder_access
 
 @api_view(['POST'])
 def login(request):

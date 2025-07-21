@@ -3,10 +3,11 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from .models import FolderAccess
 from django.conf import settings
-from .permissions import is_admin, can_view_folder, can_rename_folder, can_delete_folder
+from .permissions import is_admin, can_view_folder, can_rename_folder, can_delete_folder, can_download_folder
 from .serializers import LoginSerializer
 from rest_framework.permissions import IsAuthenticated
-from .middleware import get_files, download, rename, delete_file_folder, create_file, upload_fol, create_folder, login_user, logout_user, users, folders, folder_access
+from .middleware import get_files, download, rename, delete_file_folder, upload_file, upload_fol, create_folder, login_user, logout_user, users, folders, folder_access, get_user_upload_permissions, trash
+
 
 @api_view(['POST'])
 def login(request):
@@ -60,6 +61,7 @@ def list_folders(request):
                 "can_view": True,
                 "can_edit": True,
                 "can_delete": True,
+                "can_download": True,
                 "subfolders": subfolders
             })
 
@@ -90,6 +92,7 @@ def list_folders(request):
                 "can_view": True,
                 "can_edit": can_rename_folder(user, rel_folder_path),
                 "can_delete": can_delete_folder(user, rel_folder_path),
+                "can_download": can_download_folder(user, rel_folder_path),
                 "subfolders": subfolders
             })
     return Response({"folders": folders})
@@ -124,13 +127,18 @@ def delete(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+def move_to_trash(request):
+    return trash(request)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def upload_folder(request):
     return upload_fol(request)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create(request):
-    return create_file(request)
+    return upload_file(request)
 
 
 @api_view(['POST'])
@@ -154,3 +162,8 @@ def get_folders(request):
 @permission_classes([IsAuthenticated])
 def assign_folder_access(request):
     return folder_access(request)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_permissions(request):
+    return get_user_upload_permissions(request)

@@ -1,14 +1,17 @@
 import os
 from rest_framework.response import Response
-from .models import FolderAccess, FileAccess, User
+from .models import FolderAccess, FileAccess, User, UserPermissions
 from django.conf import settings
 from django.http import FileResponse, HttpResponseBadRequest, Http404
 import zipfile
 import io
+from demo import errors
 import shutil
 from .serializers import LoginSerializer, BulkFolderAccessSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from .permissions import is_admin, can_delete_folder, can_rename_folder, can_view_folder
+from .permissions import is_admin, can_delete_folder, can_rename_folder, can_view_folder, check_permission
+from django.utils import timezone
+import json
 
 
 def login_user(request):
@@ -33,12 +36,12 @@ def logout_user(request):
     try:
         refresh_token = request.data.get("refresh")
         if refresh_token is None:
-            return Response({"error": "Refresh token is required"})
+            return Response({errors.Error: "Refresh token is required"})
         token = RefreshToken(refresh_token)
         token.blacklist()
         return Response({"detail": "Logout successful"})
     except Exception as e:
-        return Response({"error": str(e)})
+        return Response({errors.Error: str(e)})
 
 # def get_folders(request):
 #     print('inside get folder')
@@ -242,7 +245,7 @@ def get_files(request):
     abs_folder_path = os.path.join(settings.MEDIA_ROOT, rel_folder_path)
 
     if not rel_folder_path or not os.path.isdir(abs_folder_path):
-        return Response({"error": "Invalid folder path."})
+        return Response({errors.Error: errors.INVALID_FOLDER_PATH})
 
     # === List Files ===
     all_files = [
@@ -264,6 +267,7 @@ def get_files(request):
                 "can_view": True,
                 "can_edit": True,
                 "can_delete": True,
+                "can_download": True,
                 "file_url": file_url,
                 "download_url": download_url
             })
@@ -283,6 +287,7 @@ def get_files(request):
                     "can_view": access.can_view,
                     "can_edit": access.can_edit,
                     "can_delete": access.can_delete,
+                    "can_download": access.can_download,
                     "file_url": file_url,
                     "download_url": download_url
                 })
@@ -306,7 +311,8 @@ def get_files(request):
                 "path": folder_rel_path,
                 "can_view": True,
                 "can_edit": True,
-                "can_delete": True
+                "can_delete": True,
+                "can_download": True,
             })
     else:
         folder_access_records = FolderAccess.objects.filter(
@@ -325,7 +331,8 @@ def get_files(request):
                     "path": folder_rel_path,
                     "can_view": access.can_view,
                     "can_edit": access.can_edit,
-                    "can_delete": access.can_delete
+                    "can_delete": access.can_delete,
+                    "can_download": access.can_download,
                 })
 
     return Response({
@@ -338,13 +345,17 @@ def get_files(request):
 def download(request):
     folder_path = request.data.get("folder_path")
     if not folder_path:
-        return Response({"error": "No folder path provided"}, status=400)
+        return Response({errors.Error: errors.PATH_NOT_PROVIDED})
 
     abs_folder_path = os.path.join(settings.MEDIA_ROOT, folder_path)
     # if not os.path.exists(abs_folder_path) or not os.path.isdir(abs_folder_path):
     #     raise Http404("Folder not found")
     if not FolderAccess.objects.filter(folder_path=folder_path, user=request.user).exists():
         raise Http404("Folder not found in database")
+    
+    access = FolderAccess.objects.filter(folder_path=folder_path, user=request.user).first()
+    if not access or not access.can_download:
+        return Response({errors.Error: errors.DOWNLOAD_PERMISSION})
 
     # Create zip in memory
     zip_stream = io.BytesIO()
@@ -364,8 +375,10 @@ def rename(request):
     old_path = request.data.get('old_path')
     new_name = request.data.get('new_name')
 
-    if not old_path or not new_name:
-        return Response({"error": "Missing old_path or new_name"})
+    if not old_path:
+        return Response({errors.Error: errors.MISSING__OLDPATH})
+    elif not new_name:
+        return Response({errors.Error: errors.MISSING_NEWNAME})
 
     # Strip '/media/' only if present in the path
     # if old_path.startswith('/media/'):
@@ -378,12 +391,12 @@ def rename(request):
     abs_new_path = os.path.join(dir_name, new_name)
 
     if not os.path.exists(abs_old_path):
-        return Response({"error": f"Item does not exist at: {abs_old_path}"})
+        return Response({errors.Error: f"Item does not exist at: {abs_old_path}"})
 
     try:
         os.rename(abs_old_path, abs_new_path)
     except Exception as e:
-        return Response({"error": str(e)})
+        return Response({errors.Error: str(e)})
 
     rel_new_path = os.path.join(os.path.dirname(relative_path), new_name)
 
@@ -399,14 +412,14 @@ def delete_file_folder(request):
     path = request.data.get('path')
 
     if not path:
-        return Response({"error": "Missing path"}, status=400)
+        return Response({errors.Error: errors.PATH_NOT_PROVIDED})
 
     # Convert /media/... to relative path
     relative_path = path.replace('/media/', '')
     abs_path = os.path.join(settings.MEDIA_ROOT, relative_path)
 
     if not os.path.exists(abs_path):
-        return Response({"error": "Path does not exist"})
+        return Response({errors.Error: errors.PATH_DOES_NOT_EXIST})
 
     try:
         if os.path.isdir(abs_path):
@@ -416,10 +429,50 @@ def delete_file_folder(request):
             os.remove(abs_path)
             FileAccess.objects.filter(file_path=relative_path).delete()
     except Exception as e:
+        return Response({errors.Error: str(e)})
+
+    return Response({errors.Success: errors.DELETED_SUCCESSFULLY})
+
+
+def trash(request):
+    try:
+        body = json.loads(request.body)
+        items = body.get("items", [])
+        item_type = body.get("type")  # either 'file' or 'folder'
+        user = request.user
+
+        if not user.is_authenticated or user.role != "admin":
+            return Response({errors.Error: errors.UNAUTHORIZED})
+
+        now = timezone.now()
+        updated = []
+
+        if item_type == "file":
+            for item in items:
+                file = FileAccess.objects.filter(file_path=item).first()
+                if file:
+                    file.is_trashed = True
+                    file.trashed_at = now
+                    file.save()
+                    updated.append(file.file_path)
+        elif item_type == "folder":
+            for item in items:
+                folder = FolderAccess.objects.filter(folder_path=item).first()
+                if folder:
+                    folder.is_trashed = True
+                    folder.trashed_at = now
+                    folder.save()
+                    updated.append(folder.folder_path)
+        else:
+            return Response({errors.Error: errors.INVALID_TYPE})
+
+        return Response({
+            errors.Success: True,
+            "updated": updated
+        })
+
+    except Exception as e:
         return Response({"error": str(e)})
-
-    return Response({"message": "Deleted successfully"})
-
 
 def create_folder(request):
     name = request.data.get('name')
@@ -432,7 +485,7 @@ def create_folder(request):
     abs_new_path = os.path.join(abs_parent_path, name)
 
     if FolderAccess.objects.filter(folder_path=clean_path).exists():
-        return Response({"error": "Folder already exists in database"}, status=400)
+        return Response({errors.Error: errors.FOLDER_ALREADY_EXISTS})
 
     if os.path.exists(abs_new_path):
         print("Folder exists on disk but not in DB. Re-using it.")
@@ -448,25 +501,25 @@ def create_folder(request):
             can_edit=False,
             can_delete=False
         )
-        return Response({"message": "Folder created successfully"})
+        return Response({errors.Success: errors.FOLDER_CREATED})
 
     except Exception as e:
-        return Response({"error": str(e)})
+        return Response({errors.Error: str(e)})
 
 
     
 
-def create_file(request):
+def upload_file(request):
     print('inside create file')
 
     uploaded_file = request.FILES.get('file')
-    upload_path = request.POST.get('path') or ''  # Handle None or ''
+    upload_path = request.POST.get('path') or ''
 
     print('uploaded file:', uploaded_file)
     print('uploaded path:', upload_path)
 
     if not uploaded_file:
-        return Response({"error": "Missing file"}, status=400)
+        return Response({errors.Error: errors.MISSING_FILE})
 
     # Handle empty path case
     if upload_path.strip() == '':
@@ -492,11 +545,11 @@ def create_file(request):
         user=request.user,
         can_view=True,
         can_edit=True,
-        can_delete=True
+        can_delete=True,
     )
     print('saved')
 
-    return Response({"message": "File uploaded successfully"})
+    return Response({errors.Success: errors.FILE_UPLOADED_SUCCESSFULLY})
 
 
 def upload_fol(request):
@@ -532,7 +585,8 @@ def upload_fol(request):
                     'user': request.user,
                     'can_view': True,
                     'can_edit': True,
-                    'can_delete': True
+                    'can_delete': True,
+                    'can_download': True
                 }
             )
             parent_folder_path = os.path.dirname(parent_folder_path)
@@ -547,7 +601,8 @@ def upload_fol(request):
             user=request.user,
             can_view=True,
             can_edit=True,
-            can_delete=True
+            can_delete=True,
+            can_download=True
         )
 
     return Response({"message": "Folder uploaded successfully"})
@@ -563,8 +618,9 @@ def users(request):
 
 def folders(request):
     folders = FolderAccess.objects.values_list('folder_path', flat=True).distinct()
+    top_level_folders = [path for path in folders if '/' not in path and '\\' not in path]
     return Response({
-        "folders": [{"folder_path": path} for path in folders]
+        "folders": [{"folder_path": path} for path in top_level_folders]
     })
 
 
@@ -574,9 +630,12 @@ def folder_access(request):
     for item in request.data:
         usernames = item.get("username", [])
         folder_paths = item.get("folder_path", [])
-        can_view = item.get("can_view", True)
-        can_edit = item.get("can_edit", False)
-        can_delete = item.get("can_delete", False)
+        can_upload_folder = item.get("can_upload_folder")
+        can_upload_file = item.get("can_upload_file")
+        can_view = item.get("can_view")
+        can_edit = item.get("can_edit")
+        can_delete = item.get("can_delete")
+        can_download = item.get("can_download")
 
     print('after for loop')
 
@@ -585,24 +644,23 @@ def folder_access(request):
     if isinstance(folder_paths, str):
         folder_paths = [folder_paths]
 
-    print('validating users, folders')
     if not User.objects.filter(username__in=usernames).exists():
-        print('if not user')
-        return Response({"error": "One or more users do not exist."})
-    if not folder_paths:
-        print('if not folder')
-        return Response({"error": "No folder paths provided."})
+        return Response({errors.Error: errors.SELECTED_USER_DOES_NOT_EXIST})
+    if not folder_paths and (can_view or can_edit or can_delete or can_download):
+        return Response({errors.Error: errors.PATH_NOT_PROVIDED})
 
-    print('after validation')
     updated_objs = []
 
     for username in usernames:
         user = User.objects.get(username=username)
-        print('user: ', user)
-
+        try:
+            user_perm, created = UserPermissions.objects.get_or_create(user=user)
+            user_perm.can_upload_folder = can_upload_folder
+            user_perm.can_upload_file = can_upload_file
+            user_perm.save()
+        except Exception as e:
+            return Response({errors.Error: f"Error updating permissions for {username}: {e}"})
         for folder_path in folder_paths:
-            print('folder_path: ', folder_path)
-
             # Assign folder-level access
             obj, created = FolderAccess.objects.get_or_create(
                 user=user,
@@ -611,12 +669,14 @@ def folder_access(request):
                     'can_view': can_view,
                     'can_edit': can_edit,
                     'can_delete': can_delete,
+                    'can_download': can_download,
                 }
             )
             if not created:
                 obj.can_view = can_view
                 obj.can_edit = can_edit
                 obj.can_delete = can_delete
+                obj.can_download = can_download
             updated_objs.append(obj)
 
             # Grant access to files/subfolders within the folder
@@ -631,7 +691,8 @@ def folder_access(request):
                             defaults={
                                 "can_view": can_view,
                                 "can_edit": can_edit,
-                                "can_delete": can_delete
+                                "can_delete": can_delete,
+                                "can_download": can_download,
                             }
                         )
 
@@ -639,6 +700,27 @@ def folder_access(request):
     if len(updated_objs) == 1:
         updated_objs[0].save()
     elif len(updated_objs) > 1:
-        FolderAccess.objects.bulk_update(updated_objs, ['can_view', 'can_edit', 'can_delete'])
+        FolderAccess.objects.bulk_update(updated_objs, ['can_view', 'can_edit', 'can_delete', 'can_download'])
 
     return Response({"message": f"Permissions assigned to {len(updated_objs)} folder records, and their files."})
+
+
+def get_user_upload_permissions(request):
+    user=request.user
+    if not user:
+        return Response({errors.Error: errors.USER_NOT_PROVIDED})
+    try:
+        if not UserPermissions.objects.filter(user=user).exists():
+            return Response({errors.Error: errors.USER_DOES_NOT_EXIST})
+        permissions = UserPermissions.objects.get(user=user)
+        return Response({
+            "can_create_folder": permissions.can_create_folder,
+            "can_upload_folder": permissions.can_upload_folder,
+            "can_upload_file": permissions.can_upload_file
+        })
+    except UserPermissions.DoesNotExist:
+        return Response({
+            "can_create_folder": False,
+            "can_upload_folder": False,
+            "can_upload_file": False
+        })

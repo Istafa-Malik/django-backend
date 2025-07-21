@@ -14,12 +14,27 @@ class User(AbstractUser):
         return self.username
 
 
+
+class UserPermissions(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    can_create_folder = models.BooleanField(default=False)
+    can_upload_folder = models.BooleanField(default=False)
+    can_upload_file = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Permissions for {self.user.username}"
+
+
 class FolderAccess(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     folder_path = models.CharField(max_length=500)
     can_view = models.BooleanField(default=True)
     can_edit = models.BooleanField(default=False)
     can_delete = models.BooleanField(default=False)
+    can_download = models.BooleanField(default=False)
+    last_modified = models.DateTimeField(auto_now=True)
+    is_trashed = models.BooleanField(default=False)
+    trashed_at = models.DateTimeField(null=True, blank=True)
     def save(self, *args, **kwargs):
         if self.folder_path.startswith("djangobackend/"):
             self.folder_path = self.folder_path.replace("djangobackend/", "", 1)
@@ -34,6 +49,10 @@ class FileAccess(models.Model):
     can_view = models.BooleanField(default=False)
     can_edit = models.BooleanField(default=False)
     can_delete = models.BooleanField(default=False)
+    can_download = models.BooleanField(default=False)
+    last_modified = models.DateTimeField(auto_now=True)
+    is_trashed = models.BooleanField(default=False)
+    trashed_at = models.DateTimeField(null=True, blank=True)
     def save(self, *args, **kwargs):
         if self.file_path.startswith("djangobackend/"):
             self.file_path = self.file_path.replace("djangobackend/", "", 1)

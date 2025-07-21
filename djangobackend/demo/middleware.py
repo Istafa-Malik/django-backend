@@ -436,9 +436,13 @@ def delete_file_folder(request):
 
 def trash(request):
     try:
-        body = json.loads(request.body)
-        items = body.get("items", [])
-        item_type = body.get("type")  # either 'file' or 'folder'
+        print('req.data is', request.data)
+
+        path = request.data.get("path")
+        item_type = request.data.get("type")
+        print('item type is:', item_type)
+        print('path is:', path)
+
         user = request.user
 
         if not user.is_authenticated or user.role != "admin":
@@ -448,21 +452,25 @@ def trash(request):
         updated = []
 
         if item_type == "file":
-            for item in items:
-                file = FileAccess.objects.filter(file_path=item).first()
-                if file:
-                    file.is_trashed = True
-                    file.trashed_at = now
-                    file.save()
-                    updated.append(file.file_path)
+            file = FileAccess.objects.filter(file_path=path).first()
+            if file:
+                file.is_trashed = True
+                file.trashed_at = now
+                file.save()
+                updated.append(file.file_path)
+            else:
+                return Response({errors.Error: errors.FILE_NOT_FOUND})
+
         elif item_type == "folder":
-            for item in items:
-                folder = FolderAccess.objects.filter(folder_path=item).first()
-                if folder:
-                    folder.is_trashed = True
-                    folder.trashed_at = now
-                    folder.save()
-                    updated.append(folder.folder_path)
+            folder = FolderAccess.objects.filter(folder_path=path).first()
+            if folder:
+                folder.is_trashed = True
+                folder.trashed_at = now
+                folder.save()
+                updated.append(folder.folder_path)
+            else:
+                return Response({errors.Error: errors.FOLDER_NOT_FOUND})
+
         else:
             return Response({errors.Error: errors.INVALID_TYPE})
 
@@ -473,6 +481,7 @@ def trash(request):
 
     except Exception as e:
         return Response({"error": str(e)})
+
 
 def create_folder(request):
     name = request.data.get('name')

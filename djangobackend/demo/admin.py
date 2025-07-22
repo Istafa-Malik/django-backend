@@ -31,5 +31,5 @@ class FileAccessAdmin(admin.ModelAdmin):
 
 @admin.register(UserPermissions)
 class UserPermssionsAdmin(admin.ModelAdmin):
-    list_display=('user', 'can_create_folder', 'can_upload_folder', 'can_upload_file')
-    list_filter=('can_create_folder', 'can_upload_folder', 'can_upload_file')
+    list_display=('user', 'can_upload_folder', 'can_upload_file')
+    list_filter=('can_upload_folder', 'can_upload_file')

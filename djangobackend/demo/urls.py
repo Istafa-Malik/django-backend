@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import login, list_files, list_folders, download_folder,edit, delete, create, upload_folder, logout, create_fold, get_users, get_folders, assign_folder_access, user_permissions, move_to_trash
+from .views import login, list_files, list_folders, download_folder,edit, delete, create, upload_folder, logout, create_fold, get_users, get_folders, assign_folder_access, user_permissions, move_to_trash, get_from_trash
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
@@ -16,6 +16,7 @@ urlpatterns = [
     path('edit/', edit, name='edit'),
     path('delete/', delete, name='delete'),
     path('move-to-trash/',move_to_trash,name='move-to-trash'),
+    path('get-from-trash/', get_from_trash, name='get-from-trash'),
     path('upload-file/', create, name='create'),
     path('upload-folder/', upload_folder, name='upload-folder'),
     path('create-folder/', create_fold, name='create-folder'),

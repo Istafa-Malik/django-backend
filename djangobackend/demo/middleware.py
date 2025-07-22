@@ -7,7 +7,7 @@ import zipfile
 import io
 from demo import errors
 import shutil
-from .serializers import LoginSerializer, BulkFolderAccessSerializer
+from .serializers import LoginSerializer, BulkFolderAccessSerializer, FileAccessSerializer, FolderAccessSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from .permissions import is_admin, can_delete_folder, can_rename_folder, can_view_folder, check_permission
 from django.utils import timezone
@@ -439,25 +439,23 @@ def trash(request):
         print('req.data is', request.data)
 
         path = request.data.get("path")
+        if path.startswith("/media/"):
+            path = path[len("/media/"):]
         item_type = request.data.get("type")
         print('item type is:', item_type)
         print('path is:', path)
-
-        user = request.user
-
-        if not user.is_authenticated or user.role != "admin":
-            return Response({errors.Error: errors.UNAUTHORIZED})
 
         now = timezone.now()
         updated = []
 
         if item_type == "file":
             file = FileAccess.objects.filter(file_path=path).first()
+            print('file is: ', file)
             if file:
                 file.is_trashed = True
                 file.trashed_at = now
                 file.save()
-                updated.append(file.file_path)
+                updated.append('/media/' + file.file_path)
             else:
                 return Response({errors.Error: errors.FILE_NOT_FOUND})
 
@@ -467,7 +465,7 @@ def trash(request):
                 folder.is_trashed = True
                 folder.trashed_at = now
                 folder.save()
-                updated.append(folder.folder_path)
+                updated.append('/media/' + folder.folder_path)
             else:
                 return Response({errors.Error: errors.FOLDER_NOT_FOUND})
 
@@ -483,6 +481,27 @@ def trash(request):
         return Response({"error": str(e)})
 
 
+def get_trash(request):
+    user = request.user
+    if is_admin(user):
+        folders = FolderAccess.objects.filter(is_trashed=True)
+        folders = FolderAccessSerializer(folders, many=True).data
+        for folder in folders:
+            folder["folder_path"] = "/media/" + folder["folder_path"]
+        print('folders: ', folders)
+        files = FileAccess.objects.filter(is_trashed=True)
+        files = FileAccessSerializer(files, many=True).data
+        for file in files:
+            file["file_path"] = "/media/" + file["file_path"]
+        print('files: ', files)
+        return Response({
+            errors.Success: "Trash",
+            "folders": folders,
+            "files": files,
+            })
+    else:
+        return Response({errors.Error: errors.UNAUTHORIZED})
+
 def create_folder(request):
     name = request.data.get('name')
     path = request.data.get('path') or '.'
@@ -492,7 +511,6 @@ def create_folder(request):
 
     abs_parent_path = os.path.join(settings.MEDIA_ROOT, path)
     abs_new_path = os.path.join(abs_parent_path, name)
-
     if FolderAccess.objects.filter(folder_path=clean_path).exists():
         return Response({errors.Error: errors.FOLDER_ALREADY_EXISTS})
 
@@ -501,8 +519,6 @@ def create_folder(request):
 
     try:
         os.makedirs(abs_new_path, exist_ok=True)
-
-        # Register in DB
         FolderAccess.objects.create(
             folder_path=clean_path,
             user=request.user,
@@ -510,13 +526,11 @@ def create_folder(request):
             can_edit=False,
             can_delete=False
         )
-        return Response({errors.Success: errors.FOLDER_CREATED})
+        return Response({errors.Success: errors.FOLDER_CREATED_SUCCESSFULLY})
 
     except Exception as e:
         return Response({errors.Error: str(e)})
 
-
-    
 
 def upload_file(request):
     print('inside create file')
@@ -547,8 +561,6 @@ def upload_file(request):
         for chunk in uploaded_file.chunks():
             destination.write(chunk)
 
-    print('db_path is: ', db_path)
-    print('before saving file to db')
     FileAccess.objects.create(
         file_path=db_path,
         user=request.user,
@@ -556,13 +568,10 @@ def upload_file(request):
         can_edit=True,
         can_delete=True,
     )
-    print('saved')
-
     return Response({errors.Success: errors.FILE_UPLOADED_SUCCESSFULLY})
 
 
 def upload_fol(request):
-    print('inside folder')
 
     uploaded_files = request.FILES.getlist('files')
     relative_paths = request.POST.getlist('paths')
@@ -723,13 +732,11 @@ def get_user_upload_permissions(request):
             return Response({errors.Error: errors.USER_DOES_NOT_EXIST})
         permissions = UserPermissions.objects.get(user=user)
         return Response({
-            "can_create_folder": permissions.can_create_folder,
             "can_upload_folder": permissions.can_upload_folder,
             "can_upload_file": permissions.can_upload_file
         })
     except UserPermissions.DoesNotExist:
         return Response({
-            "can_create_folder": False,
             "can_upload_folder": False,
             "can_upload_file": False
         })

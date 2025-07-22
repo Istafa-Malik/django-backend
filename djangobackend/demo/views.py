@@ -6,7 +6,7 @@ from django.conf import settings
 from .permissions import is_admin, can_view_folder, can_rename_folder, can_delete_folder, can_download_folder
 from .serializers import LoginSerializer
 from rest_framework.permissions import IsAuthenticated
-from .middleware import get_files, download, rename, delete_file_folder, upload_file, upload_fol, create_folder, login_user, logout_user, users, folders, folder_access, get_user_upload_permissions, trash
+from .middleware import get_files, download, rename, delete_file_folder, upload_file, upload_fol, create_folder, login_user, logout_user, users, folders, folder_access, get_user_upload_permissions, trash, get_trash
 
 
 @api_view(['POST'])
@@ -23,7 +23,7 @@ def logout(request):
 def list_folders(request):
     user = request.user
     folders = []
-    db_entries = FolderAccess.objects.filter(user=user)
+    db_entries = FolderAccess.objects.filter(user=user, is_trashed=False)
     db_has_folders = db_entries.exists()
     try:
         disk_folders = [
@@ -66,7 +66,7 @@ def list_folders(request):
             })
 
     else:
-        access_entries = FolderAccess.objects.filter(user=user)
+        access_entries = FolderAccess.objects.filter(user=user, is_trashed=False)
 
         if not access_entries.exists():
             return Response({"error": "You do not have access to any folders."})
@@ -130,6 +130,12 @@ def delete(request):
 def move_to_trash(request):
     return trash(request)
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_from_trash(request):
+    print('inside get from trash')
+    return get_trash(request)
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def upload_folder(request):
@@ -167,3 +173,4 @@ def assign_folder_access(request):
 @permission_classes([IsAuthenticated])
 def user_permissions(request):
     return get_user_upload_permissions(request)
+

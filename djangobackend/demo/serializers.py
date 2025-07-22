@@ -1,7 +1,7 @@
 from django.contrib.auth import authenticate
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-
+from .models import FolderAccess, FileAccess
 User = get_user_model
 
 
@@ -28,3 +28,16 @@ class BulkFolderAccessSerializer(serializers.Serializer):
         if not User.objects.filter(username=value).exists():
             raise serializers.ValidationError(f"User '{value} does not exist")
         return value
+    
+
+
+
+class FolderAccessSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FolderAccess
+        fields = '__all__'
+
+class FileAccessSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FileAccess
+        fields = '__all__'

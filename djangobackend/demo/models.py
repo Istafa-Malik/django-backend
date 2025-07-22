@@ -17,7 +17,6 @@ class User(AbstractUser):
 
 class UserPermissions(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    can_create_folder = models.BooleanField(default=False)
     can_upload_folder = models.BooleanField(default=False)
     can_upload_file = models.BooleanField(default=False)
 

@@ -256,83 +256,112 @@ def get_files(request):
 
     accessible_files = []
 
+    # Get FileAccess entries filtered by is_trashed=False
+    file_access_qs = FileAccess.objects.filter(file_path__in=file_paths, is_trashed=False)
+    file_access_map = {f.file_path: f for f in file_access_qs}
+
     if is_admin(user):
-        # Admin sees all files with full permissions
+        # Admin sees all files
         for file_name in all_files:
             rel_file_path = os.path.join(rel_folder_path, file_name)
-            file_url = f"{settings.MEDIA_URL}{rel_file_path}"
-            download_url = request.build_absolute_uri(f"/media/{rel_file_path}")
-            accessible_files.append({
-                "file_name": file_name,
-                "can_view": True,
-                "can_edit": True,
-                "can_delete": True,
-                "can_download": True,
-                "file_url": file_url,
-                "download_url": download_url
-            })
+            db_entry = file_access_map.get(rel_file_path)
+
+            if db_entry:  # only non-trashed files
+                file_url = f"{settings.MEDIA_URL}{rel_file_path}"
+                download_url = request.build_absolute_uri(f"/media/{rel_file_path}")
+                accessible_files.append({
+                    "owner": db_entry.user.username,
+                    "file_name": file_name,
+                    "file_path": rel_file_path,
+                    "file_url": file_url,
+                    "download_url": download_url,
+                    "can_view": True,
+                    "can_edit": True,
+                    "can_delete": True,
+                    "can_download": True,
+                    "is_trashed": db_entry.is_trashed,
+                    "trashed_at": db_entry.trashed_at,
+                    "last_modified": db_entry.last_modified
+                })
+
     else:
-        access_records = FileAccess.objects.filter(user=user, file_path__in=file_paths)
+        # For normal users: only files they have access to
+        access_records = file_access_qs.filter(user=user, can_view=True)
         access_map = {record.file_path: record for record in access_records}
 
         for file_name in all_files:
             rel_file_path = os.path.join(rel_folder_path, file_name)
             access = access_map.get(rel_file_path)
 
-            if access and access.can_view:
+            if access:  # only include if they have view rights
                 file_url = f"{settings.MEDIA_URL}{rel_file_path}"
                 download_url = request.build_absolute_uri(f"/media/{rel_file_path}")
                 accessible_files.append({
+                    "owner": access.user.username,
                     "file_name": file_name,
+                    "file_path": rel_file_path,
+                    "file_url": file_url,
+                    "download_url": download_url,
                     "can_view": access.can_view,
                     "can_edit": access.can_edit,
                     "can_delete": access.can_delete,
                     "can_download": access.can_download,
-                    "file_url": file_url,
-                    "download_url": download_url
+                    "is_trashed": access.is_trashed,
+                    "trashed_at": access.trashed_at,
+                    "last_modified": access.last_modified
                 })
 
-    # === List Folders ===
+    # === List Folders (subfolders) ===
     all_folders = [
         d for d in os.listdir(abs_folder_path)
         if os.path.isdir(os.path.join(abs_folder_path, d))
     ]
-
     full_folder_paths = [os.path.join(rel_folder_path, d) for d in all_folders]
-
     accessible_folders = []
 
+    # Get FolderAccess entries filtered by is_trashed=False
+    folder_access_qs = FolderAccess.objects.filter(folder_path__in=full_folder_paths, is_trashed=False)
+    folder_access_map = {f.folder_path: f for f in folder_access_qs}
+
     if is_admin(user):
-        # Admin sees all subfolders with full permissions
         for folder_name in all_folders:
             folder_rel_path = os.path.join(rel_folder_path, folder_name)
-            accessible_folders.append({
-                "name": folder_name,
-                "path": folder_rel_path,
-                "can_view": True,
-                "can_edit": True,
-                "can_delete": True,
-                "can_download": True,
-            })
+            db_entry = folder_access_map.get(folder_rel_path)
+
+            if db_entry:  # only non-trashed
+                accessible_folders.append({
+                    "owner": db_entry.user.username,
+                    "name": folder_name,
+                    "path": folder_rel_path,
+                    "can_view": True,
+                    "can_edit": True,
+                    "can_delete": True,
+                    "can_download": True,
+                    "is_trashed": db_entry.is_trashed,
+                    "trashed_at": db_entry.trashed_at,
+                    "last_modified": db_entry.last_modified
+                })
+
     else:
-        folder_access_records = FolderAccess.objects.filter(
-            user=user,
-            folder_path__in=full_folder_paths,
-            can_view=True
-        )
+        folder_access_records = folder_access_qs.filter(user=user, can_view=True)
         folder_access_map = {f.folder_path: f for f in folder_access_records}
 
         for folder_name in all_folders:
             folder_rel_path = os.path.join(rel_folder_path, folder_name)
             access = folder_access_map.get(folder_rel_path)
+
             if access:
                 accessible_folders.append({
+                    "owner": access.user.username,
                     "name": folder_name,
                     "path": folder_rel_path,
                     "can_view": access.can_view,
                     "can_edit": access.can_edit,
                     "can_delete": access.can_delete,
                     "can_download": access.can_download,
+                    "is_trashed": access.is_trashed,
+                    "trashed_at": access.trashed_at,
+                    "last_modified": access.last_modified
                 })
 
     return Response({
@@ -340,6 +369,7 @@ def get_files(request):
         "files": accessible_files,
         "folders": accessible_folders
     })
+
 
 
 def download(request):
@@ -434,6 +464,34 @@ def delete_file_folder(request):
     return Response({errors.Success: errors.DELETED_SUCCESSFULLY})
 
 
+def restore_trash(request):
+    user = request.user
+    if is_admin(user):
+        type = request.data.get("type")
+        path = request.data.get("path")
+        if not type:
+            return Response({errors.Error: errors.PATH_NOT_PROVIDED})
+        if not path:
+            return Response({errors.Error: errors.TYPE_NOT_PROVIDED})
+        if type == 'folder':
+            if FolderAccess.objects.filter(folder_path=path, is_trashed=True).exists():
+                FolderAccess.objects.filter(folder_path=path).update(is_trashed=False)
+                return Response({errors.Success: errors.FOLDER_RESTORED})
+            else:
+                return Response({errors.Error, "Folder not found or not trashed"})
+        elif type == 'file':
+            if FileAccess.objects.filter(file_path=path, is_trashed=True).exists():
+                FileAccess.objects.filter(file_path=path).update(is_trashed=False)
+                return Response({errors.Success: errors.FILE_RESTORED})
+            else:
+                return Response({errors.Error, "File not found or not trashed"})
+        else:
+            return Response({errors.Error: errors.INVALID_TYPE})
+    else:
+        return Response({errors.Error: errors.UNAUTHORIZED})
+                
+    
+
 def trash(request):
     try:
         print('req.data is', request.data)
@@ -455,7 +513,7 @@ def trash(request):
                 file.is_trashed = True
                 file.trashed_at = now
                 file.save()
-                updated.append('/media/' + file.file_path)
+                updated.append(file.file_path)
             else:
                 return Response({errors.Error: errors.FILE_NOT_FOUND})
 
@@ -465,7 +523,7 @@ def trash(request):
                 folder.is_trashed = True
                 folder.trashed_at = now
                 folder.save()
-                updated.append('/media/' + folder.folder_path)
+                updated.append(folder.folder_path)
             else:
                 return Response({errors.Error: errors.FOLDER_NOT_FOUND})
 
@@ -486,13 +544,15 @@ def get_trash(request):
     if is_admin(user):
         folders = FolderAccess.objects.filter(is_trashed=True)
         folders = FolderAccessSerializer(folders, many=True).data
-        for folder in folders:
-            folder["folder_path"] = "/media/" + folder["folder_path"]
+        # for folder in folders:
+        #     folder["folder_path"] = "/media/" + folder["folder_path"]
         print('folders: ', folders)
         files = FileAccess.objects.filter(is_trashed=True)
         files = FileAccessSerializer(files, many=True).data
+        # for file in files:
+        #     file["file_path"] = "/media/" + file["file_path"]
         for file in files:
-            file["file_path"] = "/media/" + file["file_path"]
+            file["file_name"] = os.path.basename(file["file_path"])
         print('files: ', files)
         return Response({
             errors.Success: "Trash",
@@ -572,7 +632,6 @@ def upload_file(request):
 
 
 def upload_fol(request):
-
     uploaded_files = request.FILES.getlist('files')
     relative_paths = request.POST.getlist('paths')
     base_path = request.POST.get('base_path', '').strip()
@@ -627,11 +686,47 @@ def upload_fol(request):
 
 
 def users(request):
-    if request.user.role == 'admin' or request.user.role == 'Admin':
-        users = User.objects.all().values('username')
-        return Response({"users": users})
-    else:
-        return Response({"Error":"User is not admin"})
+    if request.user.role.lower() == 'admin':  # Simplified role check
+        users_data = []
+
+        # Fetch all users
+        all_users = User.objects.all()
+
+        for user in all_users:
+            # Get user-level permissions from UserPermissions table
+            try:
+                user_perm = UserPermissions.objects.get(user=user)
+                can_upload_folder = user_perm.can_upload_folder
+                can_upload_file = user_perm.can_upload_file
+            except UserPermissions.DoesNotExist:
+                # Default to False if no permission record exists
+                can_upload_folder = False
+                can_upload_file = False
+
+            # Fetch folder permissions
+            folder_perms = FolderAccess.objects.filter(user=user).values(
+                'folder_path', 'can_view', 'can_edit', 'can_delete', 'can_download'
+            )
+
+            # Fetch file permissions
+            file_perms = FileAccess.objects.filter(user=user).values(
+                'file_path', 'can_view', 'can_edit', 'can_delete', 'can_download'
+            )
+
+            # Combine all into user data
+            users_data.append({
+                "username": user.username,
+                "role": user.role,
+                "can_upload_folder": can_upload_folder,
+                "can_upload_file": can_upload_file,
+                "folder_permissions": list(folder_perms),
+                # "file_permissions": list(file_perms)
+            })
+
+        return Response({"users": users_data})
+
+    return Response({"Error": "User is not admin"})
+
     
 
 def folders(request):
@@ -671,13 +766,26 @@ def folder_access(request):
 
     for username in usernames:
         user = User.objects.get(username=username)
+
+        # --- Check role and grant all permissions if admin ---
+        if user.role.lower() == 'admin':
+            can_upload_folder = True
+            can_upload_file = True
+            can_view = True
+            can_edit = True
+            can_delete = True
+            can_download = True
+
         try:
+            print('before creating user perms')
             user_perm, created = UserPermissions.objects.get_or_create(user=user)
             user_perm.can_upload_folder = can_upload_folder
             user_perm.can_upload_file = can_upload_file
             user_perm.save()
+            print('successfully saved')
         except Exception as e:
             return Response({errors.Error: f"Error updating permissions for {username}: {e}"})
+
         for folder_path in folder_paths:
             # Assign folder-level access
             obj, created = FolderAccess.objects.get_or_create(
@@ -721,6 +829,7 @@ def folder_access(request):
         FolderAccess.objects.bulk_update(updated_objs, ['can_view', 'can_edit', 'can_delete', 'can_download'])
 
     return Response({"message": f"Permissions assigned to {len(updated_objs)} folder records, and their files."})
+
 
 
 def get_user_upload_permissions(request):

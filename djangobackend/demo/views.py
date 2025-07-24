@@ -6,7 +6,7 @@ from django.conf import settings
 from .permissions import is_admin, can_view_folder, can_rename_folder, can_delete_folder, can_download_folder
 from .serializers import LoginSerializer
 from rest_framework.permissions import IsAuthenticated
-from .middleware import get_files, download, rename, delete_file_folder, upload_file, upload_fol, create_folder, login_user, logout_user, users, folders, folder_access, get_user_upload_permissions, trash, get_trash
+from .middleware import get_files, download, rename, delete_file_folder, upload_file, upload_fol, create_folder, login_user, logout_user, users, folders, folder_access, get_user_upload_permissions, trash, get_trash, restore_trash
 
 
 @api_view(['POST'])
@@ -23,8 +23,11 @@ def logout(request):
 def list_folders(request):
     user = request.user
     folders = []
+
+    # Only fetch folders with is_trashed=False
     db_entries = FolderAccess.objects.filter(user=user, is_trashed=False)
     db_has_folders = db_entries.exists()
+
     try:
         disk_folders = [
             name for name in os.listdir(settings.MEDIA_ROOT)
@@ -36,6 +39,8 @@ def list_folders(request):
     disk_has_folders = len(disk_folders) > 0
     if not db_has_folders and not disk_has_folders:
         return Response({"message": "No folders found."})
+
+    # If Admin
     if is_admin(user):
         try:
             top_level_folders = [
@@ -56,15 +61,24 @@ def list_folders(request):
             except Exception:
                 subfolders = []
 
-            folders.append({
-                "folder_path": folder,
-                "can_view": True,
-                "can_edit": True,
-                "can_delete": True,
-                "can_download": True,
-                "subfolders": subfolders
-            })
+            # Get DB entry (filtered with is_trashed=False)
+            db_entry = FolderAccess.objects.filter(folder_path=folder, is_trashed=False).first()
 
+            if db_entry:  # Only include non-trashed
+                folders.append({
+                    "owner": db_entry.user.username,
+                    "folder_path": folder,
+                    "can_view": True,
+                    "can_edit": True,
+                    "can_delete": True,
+                    "can_download": True,
+                    "is_trashed": db_entry.is_trashed,
+                    "trashed_at": db_entry.trashed_at,
+                    "last_modified": db_entry.last_modified,
+                    "subfolders": subfolders
+                })
+
+    # If Not Admin
     else:
         access_entries = FolderAccess.objects.filter(user=user, is_trashed=False)
 
@@ -88,14 +102,20 @@ def list_folders(request):
                 subfolders = []
 
             folders.append({
+                "owner":entry.user.username,
                 "folder_path": rel_folder_path,
                 "can_view": True,
                 "can_edit": can_rename_folder(user, rel_folder_path),
                 "can_delete": can_delete_folder(user, rel_folder_path),
                 "can_download": can_download_folder(user, rel_folder_path),
+                "is_trashed": entry.is_trashed,
+                "trashed_at": entry.trashed_at,
+                "last_modified": entry.last_modified,
                 "subfolders": subfolders
             })
+
     return Response({"folders": folders})
+
 
     
 # @api_view(['POST'])
@@ -124,6 +144,10 @@ def edit(request):
 def delete(request):
     return delete_file_folder(request)
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def restore_from_trash(request):
+    return restore_trash(request)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

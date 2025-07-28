@@ -62,9 +62,9 @@ def list_folders(request):
                 subfolders = []
 
             # Get DB entry (filtered with is_trashed=False)
-            db_entry = FolderAccess.objects.filter(folder_path=folder, is_trashed=False).first()
+            db_entries = FolderAccess.objects.filter(folder_path=folder, is_trashed=False)
 
-            if db_entry:  # Only include non-trashed
+            for db_entry in db_entries:
                 folders.append({
                     "owner": db_entry.user.username,
                     "folder_path": folder,

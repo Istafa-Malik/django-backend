@@ -381,7 +381,7 @@ def download(request):
     # if not os.path.exists(abs_folder_path) or not os.path.isdir(abs_folder_path):
     #     raise Http404("Folder not found")
     if not FolderAccess.objects.filter(folder_path=folder_path, user=request.user).exists():
-        raise Http404("Folder not found in database")
+        return Response({errors.Error: errors.FOLDER_DOES_NOT_EXISTS})
     
     access = FolderAccess.objects.filter(folder_path=folder_path, user=request.user).first()
     if not access or not access.can_download:
@@ -571,7 +571,7 @@ def create_folder(request):
 
     abs_parent_path = os.path.join(settings.MEDIA_ROOT, path)
     abs_new_path = os.path.join(abs_parent_path, name)
-    if FolderAccess.objects.filter(folder_path=clean_path).exists():
+    if FolderAccess.objects.filter(folder_path=clean_path, user=request.user).exists():
         return Response({errors.Error: errors.FOLDER_ALREADY_EXISTS})
 
     if os.path.exists(abs_new_path):
@@ -682,7 +682,9 @@ def upload_fol(request):
             can_download=True
         )
 
-    return Response({"message": "Folder uploaded successfully"})
+    return Response({
+        errors.Success: errors.FOLDER_UPLOADED_SUCCESSFULLY
+    })
 
 
 def users(request):

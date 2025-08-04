@@ -24,3 +24,4 @@ FILE_NOT_FOUND="File not found"
 FOLDER_RESTORED="Folder restored successfully"
 FILE_RESTORED="File restored successfully"
 FOLDER_DOES_NOT_EXISTS='Folder does not exists'
+USER_IS_NOT_ADMIN="User is not admin"

@@ -727,7 +727,7 @@ def users(request):
 
         return Response({"users": users_data})
 
-    return Response({"Error": "User is not admin"})
+    return Response({errors.Error: errors.USER_IS_NOT_ADMIN})
 
     
 

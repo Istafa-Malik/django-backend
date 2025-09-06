@@ -26,7 +26,7 @@ SECRET_KEY = 'django-insecure-6!@4@*n27cvhwx*4bhw21ug@ev+fwwre_-gc&cwthoh!1b3#cl
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['65.2.78.181', 'localhost', '127.0.0.1']
 
 
 SIMPLE_JWT = {

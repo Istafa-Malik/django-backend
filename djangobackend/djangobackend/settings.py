@@ -72,8 +72,8 @@ REST_FRAMEWORK = {
 }
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:4200",
+    "http://65.2.78.181",      # Add this
 ]
-
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -88,8 +88,9 @@ MIDDLEWARE = [
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:4200",
-    "http://65.2.78.181:3005",
-    "http://65.2.78.181",
+    "http://65.2.78.181:3005",  # Remove this if not used
+    "http://65.2.78.181",       # Add this for port 80
+    "http://65.2.78.181:80",    # Explicit port 80
 ]
 # CORS_ALLOW_ALL_ORIGINS = True
 ROOT_URLCONF = 'djangobackend.urls'

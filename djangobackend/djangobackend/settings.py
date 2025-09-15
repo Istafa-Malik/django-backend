@@ -72,8 +72,7 @@ REST_FRAMEWORK = {
 }
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:4200",
-    "http://65.2.78.181",      # Add this
-    "http://65.2.78.181:8080",
+    "http://13.233.6.224",      # Add this
 ]
 
 MIDDLEWARE = [

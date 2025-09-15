@@ -26,7 +26,7 @@ SECRET_KEY = 'django-insecure-6!@4@*n27cvhwx*4bhw21ug@ev+fwwre_-gc&cwthoh!1b3#cl
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['65.2.78.181', 'localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['13.233.6.224', 'localhost', '127.0.0.1']
 
 
 SIMPLE_JWT = {
@@ -88,10 +88,8 @@ MIDDLEWARE = [
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:4200",
-    "http://65.2.78.181:3005",  # Remove this if not used
-    "http://65.2.78.181",       # Add this for port 80
-    "http://65.2.78.181:80",    # Explicit port 80
-    "http://65.2.78.181:8080",
+    "http://13.233.6.224",  # Remove this if not used
+    
 ]
 # CORS_ALLOW_ALL_ORIGINS = True
 ROOT_URLCONF = 'djangobackend.urls'
